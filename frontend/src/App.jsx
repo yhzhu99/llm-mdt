@@ -40,6 +40,7 @@ function App() {
   // It is NOT added to the sidebar until the first message is actually sent.
   const [draftConversationId, setDraftConversationId] = useState(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('connecting'); // connected | connecting | disconnected
 
   const loadConversations = async () => {
     try {
@@ -62,6 +63,32 @@ function App() {
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
+  }, []);
+
+  // Periodic health check (drive connection status dot like MedX).
+  useEffect(() => {
+    let alive = true;
+    let timer = null;
+
+    const tick = async () => {
+      if (!alive) return;
+      setConnectionStatus((prev) => (prev === 'connected' ? 'connected' : 'connecting'));
+      try {
+        await api.health();
+        if (!alive) return;
+        setConnectionStatus('connected');
+      } catch {
+        if (!alive) return;
+        setConnectionStatus('disconnected');
+      }
+    };
+
+    tick();
+    timer = window.setInterval(tick, 4000);
+    return () => {
+      alive = false;
+      if (timer) window.clearInterval(timer);
+    };
   }, []);
 
   // Load conversation details when selected
@@ -309,6 +336,7 @@ function App() {
       <div className="main">
         <TopBar
           title={currentConversation?.title || 'LLM Council'}
+          status={connectionStatus}
           onNewConversation={handleNewConversation}
           onRefresh={loadConversations}
         />

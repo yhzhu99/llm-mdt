@@ -17,6 +17,17 @@ export const api = {
   },
 
   /**
+   * Health check (used for UI connection status).
+   */
+  async health() {
+    const response = await fetch(`${API_BASE}/`);
+    if (!response.ok) {
+      throw new Error('Health check failed');
+    }
+    return response.json();
+  },
+
+  /**
    * Create a new conversation.
    */
   async createConversation() {

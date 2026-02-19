@@ -1,11 +1,16 @@
 import './TopBar.css';
 import Button from './Button';
 
-export default function TopBar({ title, onNewConversation, onRefresh }) {
+export default function TopBar({
+  title,
+  status = 'connected', // connected | connecting | disconnected
+  onNewConversation,
+  onRefresh,
+}) {
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <div className="status-dot" title="Local mode" />
+        <div className={`status-dot ${status}`} title={status} />
         <div className="topbar-title">{title || 'LLM Council'}</div>
       </div>
       <div className="topbar-right">
