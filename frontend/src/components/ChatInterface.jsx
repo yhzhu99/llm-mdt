@@ -15,6 +15,7 @@ export default function ChatInterface({
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
 
   useEffect(() => {
     const el = messagesEndRef.current;
@@ -46,6 +47,19 @@ export default function ChatInterface({
     }
   };
 
+  const autosizeTextarea = () => {
+    const el = inputRef.current;
+    if (!el) return;
+    // Reset height to let it shrink, then grow to content.
+    el.style.height = 'auto';
+    const maxPx = 280;
+    el.style.height = `${Math.min(el.scrollHeight, maxPx)}px`;
+  };
+
+  useEffect(() => {
+    autosizeTextarea();
+  }, [input]);
+
   if (!conversation) {
     return (
       <div className="chat-interface">
@@ -65,6 +79,7 @@ export default function ChatInterface({
 
           <form className="input-form centered" onSubmit={handleSubmit}>
             <textarea
+              ref={inputRef}
               className="message-input"
               placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
               value={input}
@@ -188,6 +203,7 @@ export default function ChatInterface({
 
       <form className="input-form" onSubmit={handleSubmit}>
         <textarea
+          ref={inputRef}
           className="message-input"
           placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
           value={input}

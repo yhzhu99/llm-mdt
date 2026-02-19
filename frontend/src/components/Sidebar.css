@@ -148,6 +148,11 @@
   opacity: 1;
 }
 
+.conversation-item:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(74, 144, 226, 0.18);
+}
+
 .conversation-dropdown {
   position: absolute;
   right: 10px;

@@ -90,6 +90,11 @@ function ConversationRow({ conv, active, collapsed, onSelect, onDelete, onRename
       title={conv.title || 'Conversation'}
       role="button"
       tabIndex={0}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        if (collapsed) return;
+        setOpen(true);
+      }}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') onSelect?.();
       }}
