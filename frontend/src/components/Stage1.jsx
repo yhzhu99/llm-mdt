@@ -4,9 +4,9 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage1.css';
 
-function ModelThinking({ status, hasThinking }) {
+function ModelThinking({ status, show }) {
   if (status !== 'running') return null;
-  if (!hasThinking) return null;
+  if (!show) return null;
   return (
     <div className="stage-thinking-inline" aria-live="polite">
       <div className="spinner"></div>
@@ -67,7 +67,9 @@ export default function Stage1({ responses, streamState, streamMeta }) {
     (active?.response && String(active.response)) ||
     streamForActive?.response ||
     '';
-  const hasThinking = !!(thinkingText && thinkingText.length > 0);
+  // Definition: show "thinking" until the model starts printing its main response.
+  // Reasoning/thinking tokens still count as "thinking"; they should not hide the indicator.
+  const showThinkingIndicator = !(responseText && responseText.length > 0);
   const activeStatus = streamMeta?.[activeModel]?.status || (active ? 'complete' : 'idle');
 
   return (
@@ -109,7 +111,7 @@ export default function Stage1({ responses, streamState, streamMeta }) {
           </div>
         </div>
         <div className="response-text markdown-content">
-          <ModelThinking status={activeStatus} hasThinking={hasThinking} />
+          <ModelThinking status={activeStatus} show={showThinkingIndicator} />
           <Markdown>{responseText}</Markdown>
         </div>
 

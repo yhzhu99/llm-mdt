@@ -373,7 +373,10 @@ function App() {
               streamMeta: {
                 ...msg.streamMeta,
                 stage1: Object.fromEntries(
-                  (event.data || []).map((r) => [r.model, { status: 'complete' }])
+                  Object.keys(msg.streamMeta?.stage1 || {}).map((m) => ([
+                    m,
+                    { status: (event.data || []).some((r) => r?.model === m) ? 'complete' : (msg.streamMeta?.stage1?.[m]?.status || 'idle') },
+                  ]))
                 ),
               },
               loading: { ...msg.loading, stage1: false },
@@ -445,7 +448,10 @@ function App() {
               streamMeta: {
                 ...msg.streamMeta,
                 stage2: Object.fromEntries(
-                  (event.data || []).map((r) => [r.model, { status: 'complete' }])
+                  Object.keys(msg.streamMeta?.stage2 || {}).map((m) => ([
+                    m,
+                    { status: (event.data || []).some((r) => r?.model === m) ? 'complete' : (msg.streamMeta?.stage2?.[m]?.status || 'idle') },
+                  ]))
                 ),
               },
               loading: { ...msg.loading, stage2: false },
