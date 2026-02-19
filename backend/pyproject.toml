@@ -1,0 +1,12 @@
+[project]
+name = "llm-mdt"
+version = "0.1.0"
+description = "Your LLM MDT"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "python-dotenv",
+    "httpx",
+    "pydantic",
+]
