@@ -19,7 +19,17 @@ function ThinkingBlock({ text }) {
   );
 }
 
-export default function Stage1({ responses, streamState }) {
+function statusDot(status) {
+  const s = status || 'idle';
+  const cls =
+    s === 'running' ? 'stage-status-dot running' :
+    s === 'complete' ? 'stage-status-dot complete' :
+    s === 'error' ? 'stage-status-dot error' :
+    'stage-status-dot';
+  return <span className={cls} aria-hidden="true" />;
+}
+
+export default function Stage1({ responses, streamState, streamMeta }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
 
@@ -55,6 +65,7 @@ export default function Stage1({ responses, streamState }) {
             className={`stage-tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
+            {statusDot(streamMeta?.[model]?.status)}
             {model.split('/')[1] || model}
           </button>
         ))}

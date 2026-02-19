@@ -19,7 +19,7 @@ function ThinkingBlock({ text }) {
   );
 }
 
-export default function Stage3({ finalResponse, streamState }) {
+export default function Stage3({ finalResponse, streamState, streamMeta }) {
   const [showThinking, setShowThinking] = React.useState(false);
   const model = finalResponse?.model || 'chairman';
   const responseText = finalResponse?.response || streamState?.response || '';
@@ -27,10 +27,16 @@ export default function Stage3({ finalResponse, streamState }) {
 
   if (!responseText && !thinkingText) return null;
 
+  const status = streamMeta?.status || (finalResponse ? 'complete' : 'running');
+  const statusText =
+    status === 'running' ? 'Generating…' :
+    status === 'error' ? 'Error' :
+    'Complete';
+
   return (
     <StageCard
       title="Stage 3"
-      subtitle={`Final synthesis (Chairman: ${model.split('/')[1] || model})`}
+      subtitle={`Final synthesis (Chairman: ${model.split('/')[1] || model}) · ${statusText}`}
       className="stage3"
       right={
         <div className="stage-actions">

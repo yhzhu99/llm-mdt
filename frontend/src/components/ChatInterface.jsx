@@ -296,6 +296,7 @@ export default function ChatInterface({
                     <Stage1
                       responses={msg.stage1 || []}
                       streamState={msg.stream?.stage1}
+                      streamMeta={msg.streamMeta?.stage1}
                     />
                   )}
 
@@ -316,6 +317,7 @@ export default function ChatInterface({
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
                       streamState={msg.stream?.stage2}
+                      streamMeta={msg.streamMeta?.stage2}
                     />
                   )}
 
@@ -331,7 +333,7 @@ export default function ChatInterface({
                     </div>
                   )}
                   {(msg.stage3 || (msg.stream?.stage3 && (msg.stream.stage3.response || msg.stream.stage3.thinking))) && (
-                    <Stage3 finalResponse={msg.stage3} streamState={msg.stream?.stage3} />
+                    <Stage3 finalResponse={msg.stage3} streamState={msg.stream?.stage3} streamMeta={msg.streamMeta?.stage3} />
                   )}
 
                   <TraceLog assistantMessage={msg} />

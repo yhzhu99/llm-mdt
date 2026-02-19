@@ -222,6 +222,11 @@ function App() {
           stage2: {},
           stage3: { response: '', thinking: '' },
         },
+        streamMeta: {
+          stage1: {},
+          stage2: {},
+          stage3: { status: 'idle' }, // idle | running | complete | error
+        },
         loading: {
           stage1: false,
           stage2: false,
@@ -295,6 +300,13 @@ function App() {
                   [event.model]: { response: '', thinking: '' },
                 },
               },
+              streamMeta: {
+                ...msg.streamMeta,
+                stage1: {
+                  ...msg.streamMeta.stage1,
+                  [event.model]: { status: 'running' },
+                },
+              },
             }));
             break;
 
@@ -316,12 +328,28 @@ function App() {
 
           case 'stage1_model_error':
             console.error('Stage1 model error:', event.model, event.message);
+            enqueueAssistantUpdate((msg) => ({
+              ...msg,
+              streamMeta: {
+                ...msg.streamMeta,
+                stage1: {
+                  ...msg.streamMeta.stage1,
+                  [event.model]: { status: 'error', message: event.message },
+                },
+              },
+            }));
             break;
 
           case 'stage1_complete':
             updateAssistantMessage((msg) => ({
               ...msg,
               stage1: event.data,
+              streamMeta: {
+                ...msg.streamMeta,
+                stage1: Object.fromEntries(
+                  (event.data || []).map((r) => [r.model, { status: 'complete' }])
+                ),
+              },
               loading: { ...msg.loading, stage1: false },
             }));
             break;
@@ -341,6 +369,13 @@ function App() {
                 stage2: {
                   ...msg.stream.stage2,
                   [event.model]: { ranking: '', thinking: '' },
+                },
+              },
+              streamMeta: {
+                ...msg.streamMeta,
+                stage2: {
+                  ...msg.streamMeta.stage2,
+                  [event.model]: { status: 'running' },
                 },
               },
             }));
@@ -364,6 +399,16 @@ function App() {
 
           case 'stage2_model_error':
             console.error('Stage2 model error:', event.model, event.message);
+            enqueueAssistantUpdate((msg) => ({
+              ...msg,
+              streamMeta: {
+                ...msg.streamMeta,
+                stage2: {
+                  ...msg.streamMeta.stage2,
+                  [event.model]: { status: 'error', message: event.message },
+                },
+              },
+            }));
             break;
 
           case 'stage2_complete':
@@ -371,6 +416,12 @@ function App() {
               ...msg,
               stage2: event.data,
               metadata: event.metadata,
+              streamMeta: {
+                ...msg.streamMeta,
+                stage2: Object.fromEntries(
+                  (event.data || []).map((r) => [r.model, { status: 'complete' }])
+                ),
+              },
               loading: { ...msg.loading, stage2: false },
             }));
             break;
@@ -381,6 +432,10 @@ function App() {
               stream: {
                 ...msg.stream,
                 stage3: { response: '', thinking: '' },
+              },
+              streamMeta: {
+                ...msg.streamMeta,
+                stage3: { status: 'running' },
               },
               loading: { ...msg.loading, stage3: true },
             }));
@@ -398,12 +453,23 @@ function App() {
 
           case 'stage3_error':
             console.error('Stage3 error:', event.message);
+            enqueueAssistantUpdate((msg) => ({
+              ...msg,
+              streamMeta: {
+                ...msg.streamMeta,
+                stage3: { status: 'error', message: event.message },
+              },
+            }));
             break;
 
           case 'stage3_complete':
             updateAssistantMessage((msg) => ({
               ...msg,
               stage3: event.data,
+              streamMeta: {
+                ...msg.streamMeta,
+                stage3: { status: 'complete' },
+              },
               loading: { ...msg.loading, stage3: false },
             }));
             break;
