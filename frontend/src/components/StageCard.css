@@ -7,6 +7,11 @@
   box-shadow: var(--shadow-sm);
 }
 
+.assistant-card .stage-card {
+  margin: 14px 0;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .stage-card-header {
   display: flex;
   align-items: flex-start;

@@ -102,6 +102,7 @@ export default function ChatInterface({
                   <div className="message-label">
                     <span>You</span>
                     <CopyButton
+                      iconOnly
                       label="Copy message"
                       successLabel="Copied"
                       getText={() => msg.content || ''}
@@ -115,9 +116,10 @@ export default function ChatInterface({
                 </div>
               ) : (
                 <div className="assistant-message message-bubble">
-                  <div className="message-label">
-                    <span>LLM Council</span>
-                  </div>
+                  <div className="assistant-card">
+                    <div className="assistant-card-head">
+                      <div className="assistant-title">LLM Council</div>
+                    </div>
 
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && (
@@ -165,6 +167,7 @@ export default function ChatInterface({
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
 
                   <TraceLog assistantMessage={msg} />
+                  </div>
                 </div>
               )}
             </div>

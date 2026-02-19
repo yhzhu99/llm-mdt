@@ -116,6 +116,29 @@
   max-width: 100%;
 }
 
+.assistant-card {
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: var(--shadow-sm);
+  padding: 16px;
+}
+
+.assistant-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.assistant-title {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(15, 23, 42, 0.55);
+  text-transform: uppercase;
+}
+
 .loading-indicator {
   display: flex;
   align-items: center;
