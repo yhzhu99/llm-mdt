@@ -121,7 +121,7 @@
   align-items: center;
   gap: 12px;
   padding: 16px;
-  color: #666;
+  color: rgba(15, 23, 42, 0.65);
   font-size: 14px;
 }
 
@@ -137,6 +137,65 @@
   color: rgba(15, 23, 42, 0.65);
   font-size: 14px;
   font-style: italic;
+}
+
+.stage-loading .loading-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+}
+
+.skeleton-line {
+  height: 10px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    rgba(15, 23, 42, 0.06),
+    rgba(15, 23, 42, 0.11),
+    rgba(15, 23, 42, 0.06)
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.3s ease infinite;
+}
+
+.skeleton-line.w40 {
+  width: 40%;
+}
+.skeleton-line.w65 {
+  width: 65%;
+}
+.skeleton-line.w85 {
+  width: 85%;
+}
+
+.skeleton-line.blue {
+  background: linear-gradient(
+    90deg,
+    rgba(74, 144, 226, 0.10),
+    rgba(74, 144, 226, 0.18),
+    rgba(74, 144, 226, 0.10)
+  );
+  background-size: 220% 100%;
+}
+
+.skeleton-line.green {
+  background: linear-gradient(
+    90deg,
+    rgba(34, 197, 94, 0.10),
+    rgba(34, 197, 94, 0.18),
+    rgba(34, 197, 94, 0.10)
+  );
+  background-size: 220% 100%;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 0% 0%;
+  }
+  100% {
+    background-position: 220% 0%;
+  }
 }
 
 .spinner {

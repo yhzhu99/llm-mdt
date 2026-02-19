@@ -123,7 +123,11 @@ export default function ChatInterface({
                   {msg.loading?.stage1 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 1: Collecting individual responses...</span>
+                      <div className="loading-lines">
+                        <div className="skeleton-line w65 blue" />
+                        <div className="skeleton-line w85" />
+                        <div className="skeleton-line w40" />
+                      </div>
                     </div>
                   )}
                   {msg.stage1 && <Stage1 responses={msg.stage1} />}
@@ -132,7 +136,11 @@ export default function ChatInterface({
                   {msg.loading?.stage2 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 2: Peer rankings...</span>
+                      <div className="loading-lines">
+                        <div className="skeleton-line w65" />
+                        <div className="skeleton-line w85 blue" />
+                        <div className="skeleton-line w40" />
+                      </div>
                     </div>
                   )}
                   {msg.stage2 && (
@@ -147,7 +155,11 @@ export default function ChatInterface({
                   {msg.loading?.stage3 && (
                     <div className="stage-loading">
                       <div className="spinner"></div>
-                      <span>Running Stage 3: Final synthesis...</span>
+                      <div className="loading-lines">
+                        <div className="skeleton-line w65 green" />
+                        <div className="skeleton-line w85" />
+                        <div className="skeleton-line w40" />
+                      </div>
                     </div>
                   )}
                   {msg.stage3 && <Stage3 finalResponse={msg.stage3} />}
