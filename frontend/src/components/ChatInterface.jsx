@@ -145,17 +145,11 @@ export default function ChatInterface({
     );
   }
 
+  // NOTE: These are computed per-assistant-message while rendering below.
+  // Using the "latest assistant" here caused earlier assistant messages'
+  // stage spinners to disappear incorrectly while a later assistant was streaming.
   const assistantMessages = (conversation?.messages || []).filter((m) => m?.role === 'assistant');
   const currentAssistant = assistantMessages[assistantMessages.length - 1];
-  const hasStreamStage1 = !!(
-    currentAssistant?.stream?.stage1 && Object.keys(currentAssistant.stream.stage1).length > 0
-  );
-  const hasStreamStage2 = !!(
-    currentAssistant?.stream?.stage2 && Object.keys(currentAssistant.stream.stage2).length > 0
-  );
-  const hasStreamStage3 = !!(
-    currentAssistant?.stream?.stage3 && (currentAssistant.stream.stage3.response || currentAssistant.stream.stage3.thinking)
-  );
 
   return (
     <div className="chat-interface">
@@ -194,6 +188,20 @@ export default function ChatInterface({
                       <div className="assistant-title">LLM Council</div>
                     </div>
 
+                  {(() => {
+                    const hasStreamStage1 = !!(
+                      msg.stream?.stage1 && Object.keys(msg.stream.stage1).length > 0
+                    );
+                    const hasStreamStage2 = !!(
+                      msg.stream?.stage2 && Object.keys(msg.stream.stage2).length > 0
+                    );
+                    const hasStreamStage3 = !!(
+                      msg.stream?.stage3 &&
+                      (msg.stream.stage3.response || msg.stream.stage3.thinking)
+                    );
+
+                    return (
+                      <>
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && !hasStreamStage1 && (
                     <div className="stage-loading" aria-live="polite">
@@ -250,6 +258,9 @@ export default function ChatInterface({
                   )}
 
                   <TraceLog assistantMessage={msg} />
+                      </>
+                    );
+                  })()}
                   </div>
                 </div>
               )}
