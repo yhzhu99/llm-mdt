@@ -1,43 +1,30 @@
-.stage2 {
-  background: #fafafa;
-}
-
-.stage2 h4 {
-  margin: 20px 0 8px 0;
-  color: #333;
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.stage2 h4:first-of-type {
-  margin-top: 0;
-}
-
-.stage-description {
-  margin: 0 0 12px 0;
-  color: #666;
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.aggregate-rankings {
-  background: #f0f7ff;
-  padding: 16px;
-  border-radius: 8px;
-  margin-bottom: 20px;
-  border: 2px solid #d0e7ff;
-}
-
-.aggregate-rankings h4 {
-  margin: 0 0 12px 0;
-  color: #2a7ae2;
-  font-size: 15px;
-}
-
 .aggregate-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+.aggregate-card {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(74, 144, 226, 0.22);
+  background: rgba(74, 144, 226, 0.08);
+}
+
+.aggregate-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.aggregate-card-title {
+  font-weight: 800;
+  color: rgba(15, 23, 42, 0.9);
+  font-size: 13px;
+  letter-spacing: 0.02em;
 }
 
 .aggregate-item {
@@ -46,12 +33,12 @@
   gap: 12px;
   padding: 10px;
   background: #ffffff;
-  border-radius: 6px;
-  border: 1px solid #d0e7ff;
+  border-radius: 14px;
+  border: 1px solid rgba(74, 144, 226, 0.18);
 }
 
 .rank-position {
-  color: #2a7ae2;
+  color: rgba(74, 144, 226, 0.95);
   font-weight: 700;
   font-size: 16px;
   min-width: 35px;
@@ -59,67 +46,20 @@
 
 .rank-model {
   flex: 1;
-  color: #333;
+  color: rgba(15, 23, 42, 0.92);
   font-family: monospace;
   font-size: 14px;
   font-weight: 500;
 }
 
 .rank-score {
-  color: #666;
+  color: rgba(15, 23, 42, 0.6);
   font-size: 13px;
   font-family: monospace;
 }
 
-.stage2 .tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.stage2 .tab {
-  padding: 8px 16px;
-  background: #ffffff;
-  border: 1px solid #d0d0d0;
-  border-radius: 6px 6px 0 0;
-  color: #666;
-  cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s;
-}
-
-.stage2 .tab:hover {
-  background: #f0f0f0;
-  color: #333;
-  border-color: #4a90e2;
-}
-
-.stage2 .tab.active {
-  background: #ffffff;
-  color: #4a90e2;
-  border-color: #4a90e2;
-  border-bottom-color: #ffffff;
-  font-weight: 600;
-}
-
-.stage2 .tab-content {
-  background: #ffffff;
-  padding: 16px;
-  border-radius: 6px;
-  border: 1px solid #e0e0e0;
-  margin-bottom: 20px;
-}
-
-.ranking-model {
-  color: #888;
-  font-size: 12px;
-  font-family: monospace;
-  margin-bottom: 12px;
-}
-
 .ranking-content {
-  color: #333;
+  color: rgba(15, 23, 42, 0.9);
   line-height: 1.6;
   font-size: 14px;
 }
@@ -127,18 +67,18 @@
 .parsed-ranking {
   margin-top: 16px;
   padding-top: 16px;
-  border-top: 2px solid #e0e0e0;
+  border-top: 1px solid rgba(15, 23, 42, 0.10);
 }
 
 .parsed-ranking strong {
-  color: #2a7ae2;
+  color: rgba(74, 144, 226, 0.95);
   font-size: 13px;
 }
 
 .parsed-ranking ol {
   margin: 8px 0 0 0;
   padding-left: 24px;
-  color: #333;
+  color: rgba(15, 23, 42, 0.9);
 }
 
 .parsed-ranking li {
@@ -148,12 +88,6 @@
 }
 
 .rank-count {
-  color: #999;
+  color: rgba(15, 23, 42, 0.5);
   font-size: 12px;
-}
-
-.stage2 .stage-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin: -6px 0 8px 0;
 }

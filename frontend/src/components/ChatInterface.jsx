@@ -16,12 +16,18 @@ export default function ChatInterface({
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    const el = messagesEndRef.current;
+    if (!el) return;
+    // Only auto-scroll if user is already near the bottom (MedX behavior).
+    const container = el.parentElement;
+    if (!container) return;
+    const distanceToBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const NEAR_BOTTOM_PX = 160;
+    if (distanceToBottom <= NEAR_BOTTOM_PX) {
+      el.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [conversation]);
 
   const handleSubmit = (e) => {
@@ -57,7 +63,7 @@ export default function ChatInterface({
             </button>
           </div>
 
-          <form className="input-form" onSubmit={handleSubmit}>
+          <form className="input-form centered" onSubmit={handleSubmit}>
             <textarea
               className="message-input"
               placeholder="Ask your question... (Shift+Enter for new line, Enter to send)"
@@ -92,7 +98,7 @@ export default function ChatInterface({
           conversation.messages.map((msg, index) => (
             <div key={index} className="message-group">
               {msg.role === 'user' ? (
-                <div className="user-message">
+                <div className="user-message message-bubble">
                   <div className="message-label">
                     <span>You</span>
                     <CopyButton
@@ -108,7 +114,7 @@ export default function ChatInterface({
                   </div>
                 </div>
               ) : (
-                <div className="assistant-message">
+                <div className="assistant-message message-bubble">
                   <div className="message-label">
                     <span>LLM Council</span>
                   </div>

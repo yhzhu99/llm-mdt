@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
+import StageCard from './StageCard';
 import './Stage1.css';
 
 export default function Stage1({ responses }) {
@@ -11,14 +12,15 @@ export default function Stage1({ responses }) {
   }
 
   return (
-    <div className="stage stage1">
-      <h3 className="stage-title">Stage 1: Individual Responses</h3>
-
-      <div className="tabs">
+    <StageCard
+      title="Stage 1"
+      subtitle="Individual model responses"
+    >
+      <div className="stage-tabs">
         {responses.map((resp, index) => (
           <button
             key={index}
-            className={`tab ${activeTab === index ? 'active' : ''}`}
+            className={`stage-tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
             {resp.model.split('/')[1] || resp.model}
@@ -26,9 +28,9 @@ export default function Stage1({ responses }) {
         ))}
       </div>
 
-      <div className="tab-content">
-        <div className="model-name">{responses[activeTab].model}</div>
-        <div className="stage-actions">
+      <div className="stage-panel">
+        <div className="stage-panel-head">
+          <div className="stage-panel-label">{responses[activeTab].model}</div>
           <CopyButton
             label="Copy"
             successLabel="Copied"
@@ -39,6 +41,6 @@ export default function Stage1({ responses }) {
           <Markdown>{responses[activeTab].response}</Markdown>
         </div>
       </div>
-    </div>
+    </StageCard>
   );
 }

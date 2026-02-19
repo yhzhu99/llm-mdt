@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
+import StageCard from './StageCard';
 import './Stage2.css';
 
 function deAnonymizeText(text, labelToModel) {
@@ -27,20 +28,15 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
   const displayText = deAnonymizeText(rawText, labelToModel);
 
   return (
-    <div className="stage stage2">
-      <h3 className="stage-title">Stage 2: Peer Rankings</h3>
-
-      <h4>Raw Evaluations</h4>
-      <p className="stage-description">
-        Each model evaluated all responses (anonymized as Response A, B, C, etc.) and provided rankings.
-        Below, model names are shown in <strong>bold</strong> for readability, but the original evaluation used anonymous labels.
-      </p>
-
-      <div className="tabs">
+    <StageCard
+      title="Stage 2"
+      subtitle="Peer evaluation and rankings (de-anonymized for readability)"
+    >
+      <div className="stage-tabs">
         {rankings.map((rank, index) => (
           <button
             key={index}
-            className={`tab ${activeTab === index ? 'active' : ''}`}
+            className={`stage-tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
             {rank.model.split('/')[1] || rank.model}
@@ -48,11 +44,9 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
         ))}
       </div>
 
-      <div className="tab-content">
-        <div className="ranking-model">
-          {activeRanking.model}
-        </div>
-        <div className="stage-actions">
+      <div className="stage-panel">
+        <div className="stage-panel-head">
+          <div className="stage-panel-label">{activeRanking.model}</div>
           <CopyButton
             label="Copy"
             successLabel="Copied"
@@ -84,9 +78,9 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
       </div>
 
       {aggregateRankings && aggregateRankings.length > 0 && (
-        <div className="aggregate-rankings">
-          <h4>Aggregate Rankings (Street Cred)</h4>
-          <div className="stage-actions">
+        <div className="aggregate-card">
+          <div className="aggregate-card-head">
+            <div className="aggregate-card-title">Aggregate Rankings</div>
             <CopyButton
               label="Copy"
               successLabel="Copied"
@@ -94,9 +88,6 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
               title="Copy aggregate rankings (JSON)"
             />
           </div>
-          <p className="stage-description">
-            Combined results across all peer evaluations (lower score is better):
-          </p>
           <div className="aggregate-list">
             {aggregateRankings.map((agg, index) => (
               <div key={index} className="aggregate-item">
@@ -115,6 +106,6 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
           </div>
         </div>
       )}
-    </div>
+    </StageCard>
   );
 }
