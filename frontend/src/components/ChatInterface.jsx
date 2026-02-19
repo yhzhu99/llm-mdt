@@ -33,52 +33,15 @@ const IconArrowUp = ({ size = 18 }) => (
   </svg>
 );
 
-const IconPaperclip = ({ size = 20 }) => (
-  <svg
-    width={size}
-    height={size}
-    viewBox="0 0 24 24"
-    fill="none"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-hidden="true"
-  >
-    <path
-      d="M21.44 11.05l-8.49 8.49a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.19 9.19a2 2 0 01-2.83-2.83l8.49-8.49"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
-);
-
-const readFileAsDataUrl = (file) =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-
-const formatFileSize = (bytes) => {
-  if (!Number.isFinite(bytes) || bytes <= 0) return '';
-  const kb = bytes / 1024;
-  if (kb < 1024) return `${kb.toFixed(0)}KB`;
-  const mb = kb / 1024;
-  return `${mb.toFixed(1)}MB`;
-};
-
 export default function ChatInterface({
   conversation,
   onSendMessage,
   isLoading,
-  onNewConversation,
+  onNewConversation: _onNewConversation,
 }) {
   const [input, setInput] = useState('');
-  const [images, setImages] = useState([]);
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
-  const fileInputRef = useRef(null);
 
   useEffect(() => {
     const el = messagesEndRef.current;
@@ -111,11 +74,10 @@ export default function ChatInterface({
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    const canSend = (input.trim().length > 0 || images.length > 0) && !isLoading;
+    const canSend = input.trim().length > 0 && !isLoading;
     if (canSend) {
-      onSendMessage(input, images.map((img) => img.dataUrl));
+      onSendMessage(input);
       setInput('');
-      setImages([]);
       // Keep typing flow: re-focus and reset height after send.
       window.setTimeout(() => {
         inputRef.current?.focus?.();
@@ -145,32 +107,7 @@ export default function ChatInterface({
     autosizeTextarea();
   }, [input]);
 
-  const canSend = (input.trim().length > 0 || images.length > 0) && !isLoading;
-
-  const handlePickImages = async (fileList) => {
-    const files = Array.from(fileList || []).filter((f) => (f?.type || '').startsWith('image/'));
-    if (files.length === 0) return;
-
-    const next = [];
-    for (const file of files) {
-      // Simple guardrail; data URLs can get huge.
-      const MAX_BYTES = 5 * 1024 * 1024;
-      if (file.size > MAX_BYTES) {
-        // eslint-disable-next-line no-alert
-        window.alert(`Image too large: ${file.name} (max 5MB)`);
-        continue;
-      }
-      // eslint-disable-next-line no-await-in-loop
-      const dataUrl = await readFileAsDataUrl(file);
-      next.push({
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        dataUrl,
-      });
-    }
-    setImages((prev) => [...prev, ...next]);
-  };
+  const canSend = input.trim().length > 0 && !isLoading;
 
   const isSingleTurnLocked = !!conversation?.messages?.some((m) => m?.role === 'user');
 
@@ -193,27 +130,6 @@ export default function ChatInterface({
               rows={3}
             />
             <div className="composer-actions">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                multiple
-                className="file-input-hidden"
-                onChange={(e) => {
-                  handlePickImages(e.target.files);
-                  // allow picking the same file again
-                  e.target.value = '';
-                }}
-              />
-              <button
-                type="button"
-                className="icon-button"
-                title="Upload images"
-                onClick={() => fileInputRef.current?.click?.()}
-                disabled={isLoading}
-              >
-                <IconPaperclip />
-              </button>
               <button
                 type="submit"
                 className="send-button icon-only"
@@ -223,26 +139,6 @@ export default function ChatInterface({
                 <IconArrowUp />
               </button>
             </div>
-            {images.length > 0 ? (
-              <div className="image-chips">
-                {images.map((img, idx) => (
-                  <div className="image-chip" key={`${img.name}_${idx}`}>
-                    <span className="image-chip-name">
-                      {img.name}
-                      {img.size ? ` (${formatFileSize(img.size)})` : ''}
-                    </span>
-                    <button
-                      type="button"
-                      className="image-chip-remove"
-                      onClick={() => setImages((prev) => prev.filter((_, j) => j !== idx))}
-                      title="Remove"
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : null}
           </form>
         </div>
       </div>
@@ -384,48 +280,7 @@ export default function ChatInterface({
             rows={3}
           />
 
-          {images.length > 0 ? (
-            <div className="image-chips">
-              {images.map((img, idx) => (
-                <div className="image-chip" key={`${img.name}_${idx}`}>
-                  <span className="image-chip-name">
-                    {img.name}
-                    {img.size ? ` (${formatFileSize(img.size)})` : ''}
-                  </span>
-                  <button
-                    type="button"
-                    className="image-chip-remove"
-                    onClick={() => setImages((prev) => prev.filter((_, j) => j !== idx))}
-                    title="Remove"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : null}
-
           <div className="composer-actions">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="file-input-hidden"
-              onChange={(e) => {
-                handlePickImages(e.target.files);
-                e.target.value = '';
-              }}
-            />
-            <button
-              type="button"
-              className="icon-button"
-              title="Upload images"
-              onClick={() => fileInputRef.current?.click?.()}
-              disabled={isLoading}
-            >
-              <IconPaperclip />
-            </button>
             <button
               type="submit"
               className="send-button icon-only"

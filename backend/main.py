@@ -42,7 +42,6 @@ class CreateConversationRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str
-    images: List[str] = []
 
 
 class UpdateConversationRequest(BaseModel):
@@ -138,7 +137,7 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         storage.update_conversation_title(conversation_id, title)
 
     # Run the 3-stage council process
-    stage1_results = await stage1_collect_responses(request.content, request.images)
+    stage1_results = await stage1_collect_responses(request.content)
     stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
     ranking_details = calculate_ranking_details(stage2_results, label_to_model)
     stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
@@ -194,7 +193,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 1: Collect responses (stream per model)
             stage1_results = []
-            async for ev in stage1_collect_responses_stream(request.content, request.images):
+            async for ev in stage1_collect_responses_stream(request.content):
                 yield f"data: {json.dumps(ev)}\n\n"
                 if ev.get("type") == "stage1_complete":
                     stage1_results = ev.get("data") or []
