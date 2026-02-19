@@ -131,7 +131,8 @@ def add_assistant_message(
     conversation_id: str,
     stage1: List[Dict[str, Any]],
     stage2: List[Dict[str, Any]],
-    stage3: Dict[str, Any]
+    stage3: Dict[str, Any],
+    metadata: Optional[Dict[str, Any]] = None,
 ):
     """
     Add an assistant message with all 3 stages to a conversation.
@@ -150,7 +151,8 @@ def add_assistant_message(
         "role": "assistant",
         "stage1": stage1,
         "stage2": stage2,
-        "stage3": stage3
+        "stage3": stage3,
+        "metadata": metadata,
     })
 
     save_conversation(conversation)

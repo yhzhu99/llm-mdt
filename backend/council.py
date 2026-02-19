@@ -255,6 +255,56 @@ def calculate_aggregate_rankings(
     return aggregate
 
 
+def calculate_ranking_details(
+    stage2_results: List[Dict[str, Any]],
+    label_to_model: Dict[str, str],
+) -> Dict[str, Any]:
+    """
+    Calculate aggregate rankings and store per-model position lists for traceability.
+
+    Returns:
+        Dict with:
+          - aggregate_rankings: list[{model, average_rank, rankings_count}]
+          - positions_by_model: dict[model -> list[int]]
+          - stage2_parsed_rankings: list[{voter_model, parsed_ranking}]
+    """
+    from collections import defaultdict
+
+    positions_by_model = defaultdict(list)
+    stage2_parsed_rankings: List[Dict[str, Any]] = []
+
+    for ranking in stage2_results:
+        voter_model = ranking.get("model", "")
+        parsed_ranking = ranking.get("parsed_ranking") or parse_ranking_from_text(ranking.get("ranking", ""))
+        stage2_parsed_rankings.append({
+            "voter_model": voter_model,
+            "parsed_ranking": parsed_ranking,
+        })
+
+        for position, label in enumerate(parsed_ranking, start=1):
+            if label in label_to_model:
+                model_name = label_to_model[label]
+                positions_by_model[model_name].append(position)
+
+    aggregate_rankings = []
+    for model, positions in positions_by_model.items():
+        if positions:
+            avg_rank = sum(positions) / len(positions)
+            aggregate_rankings.append({
+                "model": model,
+                "average_rank": round(avg_rank, 2),
+                "rankings_count": len(positions),
+            })
+
+    aggregate_rankings.sort(key=lambda x: x["average_rank"])
+
+    return {
+        "aggregate_rankings": aggregate_rankings,
+        "positions_by_model": dict(positions_by_model),
+        "stage2_parsed_rankings": stage2_parsed_rankings,
+    }
+
+
 async def generate_conversation_title(user_query: str) -> str:
     """
     Generate a short title for a conversation based on the first user message.
@@ -316,8 +366,8 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     # Stage 2: Collect rankings
     stage2_results, label_to_model = await stage2_collect_rankings(user_query, stage1_results)
 
-    # Calculate aggregate rankings
-    aggregate_rankings = calculate_aggregate_rankings(stage2_results, label_to_model)
+    # Calculate aggregate rankings + traceable details
+    ranking_details = calculate_ranking_details(stage2_results, label_to_model)
 
     # Stage 3: Synthesize final answer
     stage3_result = await stage3_synthesize_final(
@@ -329,7 +379,9 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
     # Prepare metadata
     metadata = {
         "label_to_model": label_to_model,
-        "aggregate_rankings": aggregate_rankings
+        "aggregate_rankings": ranking_details["aggregate_rankings"],
+        "positions_by_model": ranking_details["positions_by_model"],
+        "stage2_parsed_rankings": ranking_details["stage2_parsed_rankings"],
     }
 
     return stage1_results, stage2_results, stage3_result, metadata

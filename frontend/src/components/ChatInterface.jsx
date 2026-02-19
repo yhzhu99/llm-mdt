@@ -1,9 +1,83 @@
 import { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
+import Markdown from './Markdown';
+import CopyButton from './CopyButton';
 import './ChatInterface.css';
+
+function assistantMessageToCopyText(msg) {
+  const stage1 = msg.stage1 || [];
+  const stage2 = msg.stage2 || [];
+  const stage3 = msg.stage3 || null;
+  const metadata = msg.metadata || null;
+
+  const lines = [];
+
+  lines.push('## Stage 1');
+  if (stage1.length === 0) {
+    lines.push('(no data)');
+  } else {
+    for (const item of stage1) {
+      lines.push(`### ${item.model}`);
+      lines.push(item.response || '');
+      lines.push('');
+    }
+  }
+
+  lines.push('## Stage 2');
+  if (stage2.length === 0) {
+    lines.push('(no data)');
+  } else {
+    for (const item of stage2) {
+      lines.push(`### Voter: ${item.model}`);
+      lines.push(item.ranking || '');
+      if (item.parsed_ranking?.length) {
+        lines.push('');
+        lines.push('Parsed ranking:');
+        for (const label of item.parsed_ranking) {
+          lines.push(`- ${label}`);
+        }
+      }
+      lines.push('');
+    }
+  }
+
+  if (metadata) {
+    lines.push('## Stage 2 Metadata');
+    lines.push('');
+    if (metadata.label_to_model) {
+      lines.push('label_to_model:');
+      lines.push(JSON.stringify(metadata.label_to_model, null, 2));
+      lines.push('');
+    }
+    if (metadata.aggregate_rankings) {
+      lines.push('aggregate_rankings:');
+      lines.push(JSON.stringify(metadata.aggregate_rankings, null, 2));
+      lines.push('');
+    }
+    if (metadata.positions_by_model) {
+      lines.push('positions_by_model:');
+      lines.push(JSON.stringify(metadata.positions_by_model, null, 2));
+      lines.push('');
+    }
+    if (metadata.stage2_parsed_rankings) {
+      lines.push('stage2_parsed_rankings:');
+      lines.push(JSON.stringify(metadata.stage2_parsed_rankings, null, 2));
+      lines.push('');
+    }
+  }
+
+  lines.push('## Stage 3');
+  if (!stage3) {
+    lines.push('(no data)');
+  } else {
+    lines.push(`Chairman: ${stage3.model || ''}`);
+    lines.push(stage3.response || '');
+  }
+
+  return lines.join('\n');
+}
 
 export default function ChatInterface({
   conversation,
@@ -61,16 +135,30 @@ export default function ChatInterface({
             <div key={index} className="message-group">
               {msg.role === 'user' ? (
                 <div className="user-message">
-                  <div className="message-label">You</div>
+                  <div className="message-label">
+                    <span>You</span>
+                    <CopyButton
+                      label="Copy message"
+                      successLabel="Copied"
+                      getText={() => msg.content || ''}
+                    />
+                  </div>
                   <div className="message-content">
                     <div className="markdown-content">
-                      <ReactMarkdown>{msg.content}</ReactMarkdown>
+                      <Markdown>{msg.content}</Markdown>
                     </div>
                   </div>
                 </div>
               ) : (
                 <div className="assistant-message">
-                  <div className="message-label">LLM Council</div>
+                  <div className="message-label">
+                    <span>LLM Council</span>
+                    <CopyButton
+                      label="Copy message"
+                      successLabel="Copied"
+                      getText={() => assistantMessageToCopyText(msg)}
+                    />
+                  </div>
 
                   {/* Stage 1 */}
                   {msg.loading?.stage1 && (
