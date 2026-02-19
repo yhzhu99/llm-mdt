@@ -4,6 +4,7 @@
   overflow: hidden;
   margin: 12px 0;
   background: #ffffff;
+  position: relative;
 }
 
 .md-codeblock__header {
@@ -31,4 +32,3 @@
 .md-codeblock__copy {
   font-size: 12px;
 }
-

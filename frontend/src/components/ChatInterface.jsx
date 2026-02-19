@@ -94,6 +94,21 @@ export default function ChatInterface({
     }
   }, [conversation]);
 
+  // Ensure stream updates keep the viewport near bottom (best-effort).
+  useEffect(() => {
+    if (!isLoading) return;
+    const el = messagesEndRef.current;
+    if (!el) return;
+    const container = el.parentElement;
+    if (!container) return;
+    const distanceToBottom =
+      container.scrollHeight - container.scrollTop - container.clientHeight;
+    const NEAR_BOTTOM_PX = 220;
+    if (distanceToBottom <= NEAR_BOTTOM_PX) {
+      el.scrollIntoView({ behavior: 'auto' });
+    }
+  }, [isLoading, conversation?.messages?.length]);
+
   const handleSubmit = (e) => {
     e.preventDefault();
     const canSend = (input.trim().length > 0 || images.length > 0) && !isLoading;
@@ -234,14 +249,16 @@ export default function ChatInterface({
     );
   }
 
-  const hasStreamStage1 = !!(conversation?.messages || []).some(
-    (m) => m?.role === 'assistant' && m?.stream?.stage1 && Object.keys(m.stream.stage1).length > 0
+  const assistantMessages = (conversation?.messages || []).filter((m) => m?.role === 'assistant');
+  const currentAssistant = assistantMessages[assistantMessages.length - 1];
+  const hasStreamStage1 = !!(
+    currentAssistant?.stream?.stage1 && Object.keys(currentAssistant.stream.stage1).length > 0
   );
-  const hasStreamStage2 = !!(conversation?.messages || []).some(
-    (m) => m?.role === 'assistant' && m?.stream?.stage2 && Object.keys(m.stream.stage2).length > 0
+  const hasStreamStage2 = !!(
+    currentAssistant?.stream?.stage2 && Object.keys(currentAssistant.stream.stage2).length > 0
   );
-  const hasStreamStage3 = !!(conversation?.messages || []).some(
-    (m) => m?.role === 'assistant' && m?.stream?.stage3 && (m.stream.stage3.response || m.stream.stage3.thinking)
+  const hasStreamStage3 = !!(
+    currentAssistant?.stream?.stage3 && (currentAssistant.stream.stage3.response || currentAssistant.stream.stage3.thinking)
   );
 
   return (

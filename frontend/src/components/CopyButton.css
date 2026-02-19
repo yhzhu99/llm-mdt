@@ -2,6 +2,7 @@
   display: inline-flex;
   align-items: center;
   position: relative;
+  isolation: isolate;
 }
 
 .copy-button {
