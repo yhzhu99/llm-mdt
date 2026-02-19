@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
 import StageCard from './StageCard';
@@ -43,23 +43,19 @@ function statusDot(status) {
 export default function Stage1({ responses, streamState, streamMeta }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
-  const lastModelRef = useRef(null);
 
-  const modelsFromStream = streamState ? Object.keys(streamState) : [];
-  const tabs = (responses || []).map((r) => r?.model).filter(Boolean);
-  for (const m of modelsFromStream) {
-    if (!tabs.includes(m)) tabs.push(m);
-  }
+  const tabs = useMemo(() => {
+    const preferred = Object.keys(streamMeta || {});
+    const set = new Set(preferred);
+    for (const r of responses || []) if (r?.model) set.add(r.model);
+    for (const m of Object.keys(streamState || {})) if (m) set.add(m);
+    // If we know the configured order (via streamMeta), keep it stable.
+    // Anything else falls back to insertion order (still stable for this render).
+    return preferred.length > 0 ? [...preferred, ...[...set].filter((m) => !preferred.includes(m))] : [...set];
+  }, [responses, streamState, streamMeta]);
 
   if (tabs.length === 0) {
     return null;
-  }
-
-  // When new tabs appear (streaming) or ordering changes, reset to the newest model.
-  // This avoids "tab index reuse" bugs where switching tabs looks like content is "crossed".
-  if (lastModelRef.current !== tabs[tabs.length - 1]) {
-    lastModelRef.current = tabs[tabs.length - 1];
-    if (activeTab !== 0) setActiveTab(0);
   }
 
   const activeModel = tabs[Math.min(activeTab, tabs.length - 1)];

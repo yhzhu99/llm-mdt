@@ -28,6 +28,17 @@ export const api = {
   },
 
   /**
+   * Fetch client-safe runtime config (model order, chairman).
+   */
+  async getConfig() {
+    const response = await fetch(`${API_BASE}/api/config`);
+    if (!response.ok) {
+      throw new Error('Failed to fetch config');
+    }
+    return response.json();
+  },
+
+  /**
    * Create a new conversation.
    */
   async createConversation() {

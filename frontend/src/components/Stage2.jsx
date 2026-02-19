@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
 import StageCard from './StageCard';
@@ -55,21 +55,17 @@ function statusDot(status) {
 export default function Stage2({ rankings, labelToModel, aggregateRankings, streamState, streamMeta }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
-  const lastModelRef = useRef(null);
 
-  const modelsFromStream = streamState ? Object.keys(streamState) : [];
-  const tabs = (rankings || []).map((r) => r?.model).filter(Boolean);
-  for (const m of modelsFromStream) {
-    if (!tabs.includes(m)) tabs.push(m);
-  }
+  const tabs = useMemo(() => {
+    const preferred = Object.keys(streamMeta || {});
+    const set = new Set(preferred);
+    for (const r of rankings || []) if (r?.model) set.add(r.model);
+    for (const m of Object.keys(streamState || {})) if (m) set.add(m);
+    return preferred.length > 0 ? [...preferred, ...[...set].filter((m) => !preferred.includes(m))] : [...set];
+  }, [rankings, streamState, streamMeta]);
 
   if (tabs.length === 0) {
     return null;
-  }
-
-  if (lastModelRef.current !== tabs[tabs.length - 1]) {
-    lastModelRef.current = tabs[tabs.length - 1];
-    if (activeTab !== 0) setActiveTab(0);
   }
 
   const activeModel = tabs[Math.min(activeTab, tabs.length - 1)];

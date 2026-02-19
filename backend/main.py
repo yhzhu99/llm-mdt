@@ -21,6 +21,7 @@ from .council import (
     stage2_collect_rankings_stream,
     stage3_synthesize_final_stream,
 )
+from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 app = FastAPI(title="LLM Council API")
 
@@ -69,6 +70,15 @@ class Conversation(BaseModel):
 async def root():
     """Health check endpoint."""
     return {"status": "ok", "service": "LLM Council API"}
+
+
+@app.get("/api/config")
+async def get_config():
+    """Expose client-safe configuration (model order, chairman)."""
+    return {
+        "council_models": COUNCIL_MODELS,
+        "chairman_model": CHAIRMAN_MODEL,
+    }
 
 
 @app.get("/api/conversations", response_model=List[ConversationMetadata])

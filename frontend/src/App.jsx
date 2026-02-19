@@ -37,6 +37,7 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshingAfterStream, setIsRefreshingAfterStream] = useState(false);
+  const [runtimeConfig, setRuntimeConfig] = useState(null);
   // Draft conversation: created when user lands on main panel and starts typing.
   // It is NOT added to the sidebar until the first message is actually sent.
   const [draftConversationId, setDraftConversationId] = useState(null);
@@ -81,6 +82,24 @@ function App() {
   // Load conversations on mount
   useEffect(() => {
     loadConversations();
+  }, []);
+
+  // Load runtime config (model order) on mount.
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const cfg = await api.getConfig();
+        if (!alive) return;
+        setRuntimeConfig(cfg);
+      } catch (error) {
+        // Non-fatal; UI can still operate, but model order may be less stable.
+        console.warn('Failed to load runtime config:', error);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // Periodic health check (drive connection status dot like MedX).
@@ -215,6 +234,7 @@ function App() {
         `assistant_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
       // Create a partial assistant message that will be updated progressively
+      const councilOrder = runtimeConfig?.council_models || [];
       const assistantMessage = {
         id: assistantMessageId,
         role: 'assistant',
@@ -228,8 +248,8 @@ function App() {
           stage3: { response: '', thinking: '' },
         },
         streamMeta: {
-          stage1: {},
-          stage2: {},
+          stage1: Object.fromEntries(councilOrder.map((m) => [m, { status: 'idle' }])),
+          stage2: Object.fromEntries(councilOrder.map((m) => [m, { status: 'idle' }])),
           stage3: { status: 'idle' }, // idle | running | complete | error
         },
         loading: {
