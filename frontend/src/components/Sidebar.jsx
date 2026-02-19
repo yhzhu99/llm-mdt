@@ -48,6 +48,18 @@ export default function Sidebar({
         </button>
       </div>
 
+      <div className="sidebar-actions">
+        <button
+          type="button"
+          className={`new-conversation-btn ${isCollapsed ? 'collapsed' : ''}`}
+          onClick={onNewConversation}
+          title="New Conversation"
+        >
+          <span className="new-conversation-icon" aria-hidden="true">＋</span>
+          {!isCollapsed && <span className="new-conversation-label">New Conversation</span>}
+        </button>
+      </div>
+
       <div className="conversation-list scrollbar-hide">
         {visibleConversations.length === 0 ? (
           <div className="no-conversations">No conversations yet</div>

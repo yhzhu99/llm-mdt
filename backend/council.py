@@ -5,7 +5,27 @@ from .openrouter import query_models_parallel, query_model
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
-async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
+def _build_user_multimodal_message(
+    user_query: str,
+    image_data_urls: List[str] | None = None,
+) -> Dict[str, Any]:
+    image_data_urls = image_data_urls or []
+
+    # OpenRouter supports OpenAI-compatible multimodal message parts:
+    # content: [{type:"text", text:"..."}, {type:"image_url", image_url:{url:"data:image/...;base64,..."}}]
+    content_parts: List[Dict[str, Any]] = [{"type": "text", "text": user_query}]
+    for url in image_data_urls:
+        if not isinstance(url, str) or not url.strip():
+            continue
+        content_parts.append({"type": "image_url", "image_url": {"url": url}})
+
+    return {"role": "user", "content": content_parts}
+
+
+async def stage1_collect_responses(
+    user_query: str,
+    image_data_urls: List[str] | None = None,
+) -> List[Dict[str, Any]]:
     """
     Stage 1: Collect individual responses from all council models.
 
@@ -15,7 +35,9 @@ async def stage1_collect_responses(user_query: str) -> List[Dict[str, Any]]:
     Returns:
         List of dicts with 'model' and 'response' keys
     """
-    messages = [{"role": "user", "content": user_query}]
+    messages: List[Dict[str, Any]] = [
+        _build_user_multimodal_message(user_query, image_data_urls)
+    ]
 
     # Query all models in parallel
     responses = await query_models_parallel(COUNCIL_MODELS, messages)
@@ -354,7 +376,7 @@ async def run_full_council(user_query: str) -> Tuple[List, List, Dict, Dict]:
         Tuple of (stage1_results, stage2_results, stage3_result, metadata)
     """
     # Stage 1: Collect individual responses
-    stage1_results = await stage1_collect_responses(user_query)
+    stage1_results = await stage1_collect_responses(user_query, image_data_urls=None)
 
     # If no models responded successfully, return error
     if not stage1_results:

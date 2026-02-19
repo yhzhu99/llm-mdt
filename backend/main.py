@@ -32,6 +32,7 @@ class CreateConversationRequest(BaseModel):
 class SendMessageRequest(BaseModel):
     """Request to send a message in a conversation."""
     content: str
+    images: List[str] = []
 
 
 class UpdateConversationRequest(BaseModel):
@@ -127,9 +128,17 @@ async def send_message(conversation_id: str, request: SendMessageRequest):
         storage.update_conversation_title(conversation_id, title)
 
     # Run the 3-stage council process
-    stage1_results, stage2_results, stage3_result, metadata = await run_full_council(
-        request.content
-    )
+    stage1_results = await stage1_collect_responses(request.content, request.images)
+    stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
+    ranking_details = calculate_ranking_details(stage2_results, label_to_model)
+    stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
+
+    metadata = {
+        "label_to_model": label_to_model,
+        "aggregate_rankings": ranking_details["aggregate_rankings"],
+        "positions_by_model": ranking_details["positions_by_model"],
+        "stage2_parsed_rankings": ranking_details["stage2_parsed_rankings"],
+    }
 
     # Add assistant message with all stages
     storage.add_assistant_message(
@@ -175,7 +184,7 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
 
             # Stage 1: Collect responses
             yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content)
+            stage1_results = await stage1_collect_responses(request.content, request.images)
             yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
 
             # Stage 2: Collect rankings

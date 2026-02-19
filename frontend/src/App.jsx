@@ -148,7 +148,7 @@ function App() {
     return newConv.id;
   };
 
-  const handleSendMessage = async (content) => {
+  const handleSendMessage = async (content, images = []) => {
     let conversationIdForRequest;
 
     try {
@@ -224,7 +224,10 @@ function App() {
       };
 
       // Send message with streaming
-      await api.sendMessageStream(conversationIdForRequest, content, (eventType, event) => {
+      await api.sendMessageStream(
+        conversationIdForRequest,
+        { content, images },
+        (eventType, event) => {
         switch (eventType) {
           case 'stage1_start':
             updateAssistantMessage((msg) => ({

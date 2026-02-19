@@ -21,6 +21,54 @@
   gap: 10px;
 }
 
+.sidebar-actions {
+  padding: 12px 12px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.new-conversation-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(74, 144, 226, 0.22);
+  background: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease, background 0.12s ease;
+}
+
+.new-conversation-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+  background: rgba(74, 144, 226, 0.06);
+}
+
+.new-conversation-btn.collapsed {
+  justify-content: center;
+  padding: 10px;
+}
+
+.new-conversation-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 10px;
+  background: rgba(74, 144, 226, 0.14);
+  color: rgba(74, 144, 226, 1);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.new-conversation-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: rgba(15, 23, 42, 0.86);
+}
+
 .brand {
   display: flex;
   align-items: center;
