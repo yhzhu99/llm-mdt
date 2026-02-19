@@ -10,7 +10,7 @@ function ThinkingInline({ status, show }) {
   return (
     <div className="stage-thinking-inline" aria-live="polite">
       <div className="spinner"></div>
-      <span>思考中…</span>
+      <span>Thinking…</span>
     </div>
   );
 }
@@ -45,14 +45,14 @@ export default function Stage3({ finalResponse, streamState, streamMeta }) {
   const hasStartedMainOutput = !!(responseText && responseText.length > 0);
   const showThinkingIndicator = status === 'running' && !hasStartedMainOutput;
   const statusText =
-    status === 'error' ? '出错' :
-    status === 'complete' ? '已完成' :
-    (showThinkingIndicator ? '思考中' : '生成中');
+    status === 'error' ? 'Error' :
+    status === 'complete' ? 'Complete' :
+    (showThinkingIndicator ? 'Thinking' : 'Generating');
 
   return (
     <StageCard
       title="Stage 3"
-      subtitle={`最终综合（主席：${model.split('/')[1] || model}） · ${statusText}`}
+      subtitle={`Final synthesis (Chairman: ${model.split('/')[1] || model}) · ${statusText}`}
       className="stage3"
       right={
         <div className="stage-actions">
@@ -66,9 +66,9 @@ export default function Stage3({ finalResponse, streamState, streamMeta }) {
             type="button"
             className="btn ghost"
             onClick={() => setShowThinking((v) => !v)}
-            title="显示/隐藏思考过程"
+            title="Show/hide thinking"
           >
-            {showThinking ? '隐藏思考' : '显示思考'}
+            {showThinking ? 'Hide thinking' : 'Show thinking'}
           </button>
         </div>
       }

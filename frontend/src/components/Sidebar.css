@@ -129,7 +129,7 @@
   color: rgba(15, 23, 42, 0.55);
   font-size: 12px;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: none;
   letter-spacing: 0.06em;
 }
 

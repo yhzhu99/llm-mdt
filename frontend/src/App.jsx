@@ -7,27 +7,35 @@ import './App.css';
 
 const groupConversationsByDate = (conversations) => {
   const groups = {};
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const oneMonthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-
   const sorted = [...(conversations || [])].sort(
     (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
   );
 
-  for (const conv of sorted) {
-    const d = new Date(conv.created_at);
-    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    let groupName = '';
-    if (day.getTime() === today.getTime()) groupName = 'Today';
-    else if (day.getTime() > oneWeekAgo.getTime()) groupName = 'Last 7 days';
-    else if (day.getTime() > oneMonthAgo.getTime()) groupName = 'Last 30 days';
-    else groupName = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  const toDateKey = (iso) => {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate()
+    ).padStart(2, '0')}`;
+  };
 
-    if (!groups[groupName]) groups[groupName] = [];
-    groups[groupName].push(conv);
+  // Preserve insertion order of date keys (newest -> oldest)
+  const dateKeys = [];
+  const seen = new Set();
+  for (const conv of sorted) {
+    const key = toDateKey(conv.created_at);
+    if (!seen.has(key)) {
+      seen.add(key);
+      dateKeys.push(key);
+    }
   }
+
+  for (const key of dateKeys) groups[key] = [];
+  for (const conv of sorted) {
+    const key = toDateKey(conv.created_at);
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(conv);
+  }
+
   return groups;
 };
 

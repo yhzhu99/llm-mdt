@@ -9,7 +9,7 @@ function ModelThinking({ show }) {
   return (
     <div className="stage-thinking-inline" aria-live="polite">
       <div className="spinner"></div>
-      <span>思考中…</span>
+      <span>Thinking…</span>
     </div>
   );
 }
@@ -56,7 +56,7 @@ function TabThinking({ show }) {
   return (
     <span className="tab-thinking" aria-label="thinking">
       <span className="spinner tab-spinner" aria-hidden="true"></span>
-      <span className="tab-thinking-text">思考中</span>
+      <span className="tab-thinking-text">Thinking</span>
     </span>
   );
 }
