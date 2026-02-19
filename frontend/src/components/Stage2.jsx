@@ -16,8 +16,24 @@ function deAnonymizeText(text, labelToModel) {
   return result;
 }
 
-export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
+function ThinkingBlock({ text }) {
+  if (!text || String(text).trim().length === 0) {
+    return (
+      <div className="thinking-empty">
+        Model did not provide thinking / reasoning.
+      </div>
+    );
+  }
+  return (
+    <div className="thinking-text markdown-content">
+      <Markdown>{String(text)}</Markdown>
+    </div>
+  );
+}
+
+export default function Stage2({ rankings, labelToModel, aggregateRankings, streamState }) {
   const [activeTab, setActiveTab] = useState(0);
+  const [showThinking, setShowThinking] = useState(false);
 
   if (!rankings || rankings.length === 0) {
     return null;
@@ -26,6 +42,10 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
   const activeRanking = rankings[activeTab];
   const rawText = activeRanking?.ranking || '';
   const displayText = deAnonymizeText(rawText, labelToModel);
+  const streamForActive = (streamState && activeRanking?.model && streamState[activeRanking.model]) || null;
+  const thinkingText =
+    activeRanking?.reasoning_details ?? streamForActive?.thinking ?? '';
+  const displayThinking = deAnonymizeText(thinkingText, labelToModel);
 
   return (
     <StageCard
@@ -55,6 +75,14 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
               getText={() => rawText}
               title="Copy raw evaluation (anonymous labels)"
             />
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setShowThinking((v) => !v)}
+              title="Toggle thinking"
+            >
+              {showThinking ? 'Hide thinking' : 'Show thinking'}
+            </button>
           </div>
         </div>
         <div className="ranking-content markdown-content">
@@ -62,6 +90,13 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
             {displayText}
           </Markdown>
         </div>
+
+        {showThinking && (
+          <div className="thinking-panel">
+            <div className="thinking-head">Thinking</div>
+            <ThinkingBlock text={displayThinking} />
+          </div>
+        )}
 
         {activeRanking.parsed_ranking &&
          activeRanking.parsed_ranking.length > 0 && (

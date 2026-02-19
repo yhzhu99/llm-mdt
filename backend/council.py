@@ -1,7 +1,7 @@
 """3-stage LLM Council orchestration."""
 
-from typing import List, Dict, Any, Tuple
-from .openrouter import query_models_parallel, query_model
+from typing import List, Dict, Any, Tuple, AsyncIterator
+from .openrouter import query_models_parallel, query_model, query_model_stream
 from .config import COUNCIL_MODELS, CHAIRMAN_MODEL
 
 
@@ -52,6 +52,111 @@ async def stage1_collect_responses(
             })
 
     return stage1_results
+
+
+async def stage1_collect_responses_stream(
+    user_query: str,
+    image_data_urls: List[str] | None = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    messages: List[Dict[str, Any]] = [
+        _build_user_multimodal_message(user_query, image_data_urls)
+    ]
+
+    yield {"type": "stage1_start"}
+
+    import asyncio
+
+    async def run_one(model: str) -> Dict[str, Any]:
+        content_acc = ""
+        reasoning_details = None
+        yield_queue: asyncio.Queue = asyncio.Queue()
+
+        async def produce():
+            nonlocal content_acc, reasoning_details
+            try:
+                await yield_queue.put({"type": "stage1_model_start", "model": model})
+                async for ev in query_model_stream(model, messages):
+                    if ev.get("delta_type") == "content":
+                        txt = ev.get("text", "")
+                        content_acc += txt
+                        await yield_queue.put({
+                            "type": "stage1_model_delta",
+                            "model": model,
+                            "delta_type": "content",
+                            "text": txt,
+                        })
+                    elif ev.get("delta_type") == "reasoning":
+                        await yield_queue.put({
+                            "type": "stage1_model_delta",
+                            "model": model,
+                            "delta_type": "reasoning",
+                            "text": ev.get("text", ""),
+                        })
+                    elif ev.get("delta_type") == "final":
+                        reasoning_details = ev.get("reasoning_details")
+                    elif ev.get("delta_type") == "error":
+                        await yield_queue.put({
+                            "type": "stage1_model_error",
+                            "model": model,
+                            "message": ev.get("message", "unknown error"),
+                        })
+                        break
+            finally:
+                await yield_queue.put({
+                    "type": "stage1_model_complete",
+                    "model": model,
+                    "content": content_acc,
+                    "reasoning_details": reasoning_details,
+                })
+                await yield_queue.put(None)
+
+        task = asyncio.create_task(produce())
+
+        # Drain queue as a mini-iterator; the caller will multiplex these.
+        out = {
+            "model": model,
+            "task": task,
+            "queue": yield_queue,
+        }
+        return out
+
+    runners = [await run_one(m) for m in COUNCIL_MODELS]
+
+    stage1_results: List[Dict[str, Any]] = []
+
+    async def pump_one(runner: Dict[str, Any]):
+        q: asyncio.Queue = runner["queue"]
+        while True:
+            item = await q.get()
+            if item is None:
+                break
+            yield item
+
+    # Multiplex all model event streams
+    pumps = [pump_one(r) for r in runners]
+    pending = {asyncio.create_task(p.__anext__()): p for p in pumps}
+
+    while pending:
+        done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
+        for t in done:
+            p = pending.pop(t)
+            try:
+                ev = t.result()
+            except StopAsyncIteration:
+                continue
+            # schedule next
+            pending[asyncio.create_task(p.__anext__())] = p
+
+            yield ev
+
+            if ev.get("type") == "stage1_model_complete":
+                stage1_results.append({
+                    "model": ev.get("model"),
+                    "response": ev.get("content", ""),
+                    "reasoning_details": ev.get("reasoning_details"),
+                })
+
+    yield {"type": "stage1_complete", "data": stage1_results}
 
 
 async def stage2_collect_rankings(
@@ -134,6 +239,153 @@ Now provide your evaluation and ranking:"""
     return stage2_results, label_to_model
 
 
+async def stage2_collect_rankings_stream(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+) -> AsyncIterator[Dict[str, Any]]:
+    labels = [chr(65 + i) for i in range(len(stage1_results))]
+
+    label_to_model = {
+        f"Response {label}": result["model"]
+        for label, result in zip(labels, stage1_results)
+    }
+
+    responses_text = "\n\n".join([
+        f"Response {label}:\n{result.get('response', '')}"
+        for label, result in zip(labels, stage1_results)
+    ])
+
+    ranking_prompt = f"""You are evaluating different responses to the following question:
+
+Question: {user_query}
+
+Here are the responses from different models (anonymized):
+
+{responses_text}
+
+Your task:
+1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
+2. Then, at the very end of your response, provide a final ranking.
+
+IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
+- Start with the line "FINAL RANKING:" (all caps, with colon)
+- Then list the responses from best to worst as a numbered list
+- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
+- Do not add any other text or explanations in the ranking section
+
+Example of the correct format for your ENTIRE response:
+
+Response A provides good detail on X but misses Y...
+Response B is accurate but lacks depth on Z...
+Response C offers the most comprehensive answer...
+
+FINAL RANKING:
+1. Response C
+2. Response A
+3. Response B
+
+Now provide your evaluation and ranking:"""
+
+    messages = [{"role": "user", "content": ranking_prompt}]
+
+    yield {"type": "stage2_start"}
+
+    import asyncio
+
+    async def run_one(model: str) -> Dict[str, Any]:
+        text_acc = ""
+        reasoning_details = None
+        q: asyncio.Queue = asyncio.Queue()
+
+        async def produce():
+            nonlocal text_acc, reasoning_details
+            try:
+                await q.put({"type": "stage2_model_start", "model": model})
+                async for ev in query_model_stream(model, messages):
+                    if ev.get("delta_type") == "content":
+                        txt = ev.get("text", "")
+                        text_acc += txt
+                        await q.put({
+                            "type": "stage2_model_delta",
+                            "model": model,
+                            "delta_type": "content",
+                            "text": txt,
+                        })
+                    elif ev.get("delta_type") == "reasoning":
+                        await q.put({
+                            "type": "stage2_model_delta",
+                            "model": model,
+                            "delta_type": "reasoning",
+                            "text": ev.get("text", ""),
+                        })
+                    elif ev.get("delta_type") == "final":
+                        reasoning_details = ev.get("reasoning_details")
+                    elif ev.get("delta_type") == "error":
+                        await q.put({
+                            "type": "stage2_model_error",
+                            "model": model,
+                            "message": ev.get("message", "unknown error"),
+                        })
+                        break
+            finally:
+                parsed = parse_ranking_from_text(text_acc)
+                await q.put({
+                    "type": "stage2_model_complete",
+                    "model": model,
+                    "ranking": text_acc,
+                    "reasoning_details": reasoning_details,
+                    "parsed_ranking": parsed,
+                })
+                await q.put(None)
+
+        task = asyncio.create_task(produce())
+        return {"model": model, "task": task, "queue": q}
+
+    runners = [await run_one(m) for m in COUNCIL_MODELS]
+    stage2_results: List[Dict[str, Any]] = []
+
+    async def pump_one(runner: Dict[str, Any]):
+        q: asyncio.Queue = runner["queue"]
+        while True:
+            item = await q.get()
+            if item is None:
+                break
+            yield item
+
+    pumps = [pump_one(r) for r in runners]
+    pending = {asyncio.create_task(p.__anext__()): p for p in pumps}
+
+    while pending:
+        done, _ = await asyncio.wait(pending.keys(), return_when=asyncio.FIRST_COMPLETED)
+        for t in done:
+            p = pending.pop(t)
+            try:
+                ev = t.result()
+            except StopAsyncIteration:
+                continue
+            pending[asyncio.create_task(p.__anext__())] = p
+
+            yield ev
+
+            if ev.get("type") == "stage2_model_complete":
+                stage2_results.append({
+                    "model": ev.get("model"),
+                    "ranking": ev.get("ranking", ""),
+                    "parsed_ranking": ev.get("parsed_ranking", []),
+                    "reasoning_details": ev.get("reasoning_details"),
+                })
+
+    ranking_details = calculate_ranking_details(stage2_results, label_to_model)
+    stage2_metadata = {
+        "label_to_model": label_to_model,
+        "aggregate_rankings": ranking_details["aggregate_rankings"],
+        "positions_by_model": ranking_details["positions_by_model"],
+        "stage2_parsed_rankings": ranking_details["stage2_parsed_rankings"],
+    }
+
+    yield {"type": "stage2_complete", "data": stage2_results, "metadata": stage2_metadata}
+
+
 async def stage3_synthesize_final(
     user_query: str,
     stage1_results: List[Dict[str, Any]],
@@ -194,6 +446,61 @@ Provide a clear, well-reasoned final answer that represents the council's collec
         "model": CHAIRMAN_MODEL,
         "response": response.get('content', '')
     }
+
+
+async def stage3_synthesize_final_stream(
+    user_query: str,
+    stage1_results: List[Dict[str, Any]],
+    stage2_results: List[Dict[str, Any]],
+) -> AsyncIterator[Dict[str, Any]]:
+    stage1_text = "\n\n".join([
+        f"Model: {result['model']}\nResponse: {result.get('response', '')}"
+        for result in stage1_results
+    ])
+
+    stage2_text = "\n\n".join([
+        f"Model: {result['model']}\nRanking: {result.get('ranking', '')}"
+        for result in stage2_results
+    ])
+
+    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+
+Original Question: {user_query}
+
+STAGE 1 - Individual Responses:
+{stage1_text}
+
+STAGE 2 - Peer Rankings:
+{stage2_text}
+
+Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
+- The individual responses and their insights
+- The peer rankings and what they reveal about response quality
+- Any patterns of agreement or disagreement
+
+Provide a clear, well-reasoned final answer that represents the council's collective wisdom:"""
+
+    messages = [{"role": "user", "content": chairman_prompt}]
+
+    yield {"type": "stage3_start"}
+
+    content_acc = ""
+    reasoning_details = None
+
+    async for ev in query_model_stream(CHAIRMAN_MODEL, messages):
+        if ev.get("delta_type") == "content":
+            txt = ev.get("text", "")
+            content_acc += txt
+            yield {"type": "stage3_delta", "delta_type": "content", "text": txt}
+        elif ev.get("delta_type") == "reasoning":
+            yield {"type": "stage3_delta", "delta_type": "reasoning", "text": ev.get("text", "")}
+        elif ev.get("delta_type") == "final":
+            reasoning_details = ev.get("reasoning_details")
+        elif ev.get("delta_type") == "error":
+            yield {"type": "stage3_error", "message": ev.get("message", "unknown error")}
+            break
+
+    yield {"type": "stage3_complete", "data": {"model": CHAIRMAN_MODEL, "response": content_acc, "reasoning_details": reasoning_details}}
 
 
 def parse_ranking_from_text(ranking_text: str) -> List[str]:

@@ -189,6 +189,11 @@ function App() {
         stage2: null,
         stage3: null,
         metadata: null,
+        stream: {
+          stage1: {},
+          stage2: {},
+          stage3: { response: '', thinking: '' },
+        },
         loading: {
           stage1: false,
           stage2: false,
@@ -236,6 +241,39 @@ function App() {
             }));
             break;
 
+          case 'stage1_model_start':
+            updateAssistantMessage((msg) => ({
+              ...msg,
+              stream: {
+                ...msg.stream,
+                stage1: {
+                  ...msg.stream.stage1,
+                  [event.model]: { response: '', thinking: '' },
+                },
+              },
+            }));
+            break;
+
+          case 'stage1_model_delta':
+            updateAssistantMessage((msg) => {
+              const prev = msg.stream?.stage1?.[event.model] || { response: '', thinking: '' };
+              const next = { ...prev };
+              if (event.delta_type === 'content') next.response += event.text || '';
+              if (event.delta_type === 'reasoning') next.thinking += event.text || '';
+              return {
+                ...msg,
+                stream: {
+                  ...msg.stream,
+                  stage1: { ...msg.stream.stage1, [event.model]: next },
+                },
+              };
+            });
+            break;
+
+          case 'stage1_model_error':
+            console.error('Stage1 model error:', event.model, event.message);
+            break;
+
           case 'stage1_complete':
             updateAssistantMessage((msg) => ({
               ...msg,
@@ -251,6 +289,39 @@ function App() {
             }));
             break;
 
+          case 'stage2_model_start':
+            updateAssistantMessage((msg) => ({
+              ...msg,
+              stream: {
+                ...msg.stream,
+                stage2: {
+                  ...msg.stream.stage2,
+                  [event.model]: { ranking: '', thinking: '' },
+                },
+              },
+            }));
+            break;
+
+          case 'stage2_model_delta':
+            updateAssistantMessage((msg) => {
+              const prev = msg.stream?.stage2?.[event.model] || { ranking: '', thinking: '' };
+              const next = { ...prev };
+              if (event.delta_type === 'content') next.ranking += event.text || '';
+              if (event.delta_type === 'reasoning') next.thinking += event.text || '';
+              return {
+                ...msg,
+                stream: {
+                  ...msg.stream,
+                  stage2: { ...msg.stream.stage2, [event.model]: next },
+                },
+              };
+            });
+            break;
+
+          case 'stage2_model_error':
+            console.error('Stage2 model error:', event.model, event.message);
+            break;
+
           case 'stage2_complete':
             updateAssistantMessage((msg) => ({
               ...msg,
@@ -263,8 +334,26 @@ function App() {
           case 'stage3_start':
             updateAssistantMessage((msg) => ({
               ...msg,
+              stream: {
+                ...msg.stream,
+                stage3: { response: '', thinking: '' },
+              },
               loading: { ...msg.loading, stage3: true },
             }));
+            break;
+
+          case 'stage3_delta':
+            updateAssistantMessage((msg) => {
+              const prev = msg.stream?.stage3 || { response: '', thinking: '' };
+              const next = { ...prev };
+              if (event.delta_type === 'content') next.response += event.text || '';
+              if (event.delta_type === 'reasoning') next.thinking += event.text || '';
+              return { ...msg, stream: { ...msg.stream, stage3: next } };
+            });
+            break;
+
+          case 'stage3_error':
+            console.error('Stage3 error:', event.message);
             break;
 
           case 'stage3_complete':

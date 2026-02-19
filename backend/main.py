@@ -10,7 +10,17 @@ import json
 import asyncio
 
 from . import storage
-from .council import run_full_council, generate_conversation_title, stage1_collect_responses, stage2_collect_rankings, stage3_synthesize_final, calculate_ranking_details
+from .council import (
+    run_full_council,
+    generate_conversation_title,
+    stage1_collect_responses,
+    stage2_collect_rankings,
+    stage3_synthesize_final,
+    calculate_ranking_details,
+    stage1_collect_responses_stream,
+    stage2_collect_rankings_stream,
+    stage3_synthesize_final_stream,
+)
 
 app = FastAPI(title="LLM Council API")
 
@@ -182,27 +192,28 @@ async def send_message_stream(conversation_id: str, request: SendMessageRequest)
             if is_first_message:
                 title_task = asyncio.create_task(generate_conversation_title(request.content))
 
-            # Stage 1: Collect responses
-            yield f"data: {json.dumps({'type': 'stage1_start'})}\n\n"
-            stage1_results = await stage1_collect_responses(request.content, request.images)
-            yield f"data: {json.dumps({'type': 'stage1_complete', 'data': stage1_results})}\n\n"
+            # Stage 1: Collect responses (stream per model)
+            stage1_results = []
+            async for ev in stage1_collect_responses_stream(request.content, request.images):
+                yield f"data: {json.dumps(ev)}\n\n"
+                if ev.get("type") == "stage1_complete":
+                    stage1_results = ev.get("data") or []
 
-            # Stage 2: Collect rankings
-            yield f"data: {json.dumps({'type': 'stage2_start'})}\n\n"
-            stage2_results, label_to_model = await stage2_collect_rankings(request.content, stage1_results)
-            ranking_details = calculate_ranking_details(stage2_results, label_to_model)
-            stage2_metadata = {
-                "label_to_model": label_to_model,
-                "aggregate_rankings": ranking_details["aggregate_rankings"],
-                "positions_by_model": ranking_details["positions_by_model"],
-                "stage2_parsed_rankings": ranking_details["stage2_parsed_rankings"],
-            }
-            yield f"data: {json.dumps({'type': 'stage2_complete', 'data': stage2_results, 'metadata': stage2_metadata})}\n\n"
+            # Stage 2: Collect rankings (stream per model)
+            stage2_results = []
+            stage2_metadata = None
+            async for ev in stage2_collect_rankings_stream(request.content, stage1_results):
+                yield f"data: {json.dumps(ev)}\n\n"
+                if ev.get("type") == "stage2_complete":
+                    stage2_results = ev.get("data") or []
+                    stage2_metadata = ev.get("metadata")
 
-            # Stage 3: Synthesize final answer
-            yield f"data: {json.dumps({'type': 'stage3_start'})}\n\n"
-            stage3_result = await stage3_synthesize_final(request.content, stage1_results, stage2_results)
-            yield f"data: {json.dumps({'type': 'stage3_complete', 'data': stage3_result})}\n\n"
+            # Stage 3: Synthesize final answer (stream chairman)
+            stage3_result = None
+            async for ev in stage3_synthesize_final_stream(request.content, stage1_results, stage2_results):
+                yield f"data: {json.dumps(ev)}\n\n"
+                if ev.get("type") == "stage3_complete":
+                    stage3_result = ev.get("data")
 
             # Wait for title generation if it was started
             if title_task:

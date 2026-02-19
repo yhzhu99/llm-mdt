@@ -4,12 +4,32 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage1.css';
 
-export default function Stage1({ responses }) {
+function ThinkingBlock({ text }) {
+  if (!text || String(text).trim().length === 0) {
+    return (
+      <div className="thinking-empty">
+        Model did not provide thinking / reasoning.
+      </div>
+    );
+  }
+  return (
+    <div className="thinking-text markdown-content">
+      <Markdown>{String(text)}</Markdown>
+    </div>
+  );
+}
+
+export default function Stage1({ responses, streamState }) {
   const [activeTab, setActiveTab] = useState(0);
+  const [showThinking, setShowThinking] = useState(false);
 
   if (!responses || responses.length === 0) {
     return null;
   }
+
+  const active = responses[activeTab];
+  const streamForActive = (streamState && active?.model && streamState[active.model]) || null;
+  const thinkingText = active?.reasoning_details ?? streamForActive?.thinking ?? '';
 
   return (
     <StageCard
@@ -30,19 +50,34 @@ export default function Stage1({ responses }) {
 
       <div className="stage-panel">
         <div className="stage-panel-head">
-          <div className="stage-panel-label">{responses[activeTab].model}</div>
+          <div className="stage-panel-label">{active.model}</div>
           <div className="stage-actions">
             <CopyButton
               iconOnly
               label="Copy"
               successLabel="Copied"
-              getText={() => responses[activeTab].response || ''}
+              getText={() => active.response || ''}
             />
+            <button
+              type="button"
+              className="btn ghost"
+              onClick={() => setShowThinking((v) => !v)}
+              title="Toggle thinking"
+            >
+              {showThinking ? 'Hide thinking' : 'Show thinking'}
+            </button>
           </div>
         </div>
         <div className="response-text markdown-content">
-          <Markdown>{responses[activeTab].response}</Markdown>
+          <Markdown>{active.response}</Markdown>
         </div>
+
+        {showThinking && (
+          <div className="thinking-panel">
+            <div className="thinking-head">Thinking</div>
+            <ThinkingBlock text={thinkingText} />
+          </div>
+        )}
       </div>
     </StageCard>
   );
