@@ -257,7 +257,11 @@ export default function ChatInterface({
           ))
         )}
 
-        {isLoading && (
+        {isLoading &&
+          // Avoid double spinners: if any stage-specific spinner is already shown
+          // in the most recent assistant message, hide the global "Consulting..."
+          // indicator.
+          !(currentAssistant?.loading?.stage1 || currentAssistant?.loading?.stage2 || currentAssistant?.loading?.stage3) && (
           <div className="loading-indicator">
             <div className="spinner"></div>
             <span>Consulting the council...</span>
