@@ -151,3 +151,9 @@
   color: #999;
   font-size: 12px;
 }
+
+.stage2 .stage-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 0 8px 0;
+}

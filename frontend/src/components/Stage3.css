@@ -18,6 +18,12 @@
   font-weight: 600;
 }
 
+.stage3 .stage-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: -6px 0 8px 0;
+}
+
 .final-text {
   color: #333;
   line-height: 1.7;

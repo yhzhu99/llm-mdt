@@ -1,0 +1,40 @@
+.trace-log {
+  margin-top: 12px;
+  border: 1px solid #e0e0e0;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.trace-log__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  background: #f9fafb;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.trace-log__toggle {
+  border: 1px solid #d0d7de;
+  background: #fff;
+  color: #24292f;
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.trace-log__toggle:hover {
+  background: #f6f8fa;
+}
+
+.trace-log__pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow: auto;
+  max-height: 320px;
+  background: #ffffff;
+  font-size: 12px;
+}
+

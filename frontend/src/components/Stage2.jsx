@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Markdown from './Markdown';
+import CopyButton from './CopyButton';
 import './Stage2.css';
 
 function deAnonymizeText(text, labelToModel) {
@@ -20,6 +21,10 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
   if (!rankings || rankings.length === 0) {
     return null;
   }
+
+  const activeRanking = rankings[activeTab];
+  const rawText = activeRanking?.ranking || '';
+  const displayText = deAnonymizeText(rawText, labelToModel);
 
   return (
     <div className="stage stage2">
@@ -45,20 +50,28 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
 
       <div className="tab-content">
         <div className="ranking-model">
-          {rankings[activeTab].model}
+          {activeRanking.model}
+        </div>
+        <div className="stage-actions">
+          <CopyButton
+            label="Copy"
+            successLabel="Copied"
+            getText={() => rawText}
+            title="Copy raw evaluation (anonymous labels)"
+          />
         </div>
         <div className="ranking-content markdown-content">
           <Markdown>
-            {deAnonymizeText(rankings[activeTab].ranking, labelToModel)}
+            {displayText}
           </Markdown>
         </div>
 
-        {rankings[activeTab].parsed_ranking &&
-         rankings[activeTab].parsed_ranking.length > 0 && (
+        {activeRanking.parsed_ranking &&
+         activeRanking.parsed_ranking.length > 0 && (
           <div className="parsed-ranking">
             <strong>Extracted Ranking:</strong>
             <ol>
-              {rankings[activeTab].parsed_ranking.map((label, i) => (
+              {activeRanking.parsed_ranking.map((label, i) => (
                 <li key={i}>
                   {labelToModel && labelToModel[label]
                     ? labelToModel[label].split('/')[1] || labelToModel[label]
@@ -73,6 +86,14 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
       {aggregateRankings && aggregateRankings.length > 0 && (
         <div className="aggregate-rankings">
           <h4>Aggregate Rankings (Street Cred)</h4>
+          <div className="stage-actions">
+            <CopyButton
+              label="Copy"
+              successLabel="Copied"
+              getText={() => JSON.stringify(aggregateRankings, null, 2)}
+              title="Copy aggregate rankings (JSON)"
+            />
+          </div>
           <p className="stage-description">
             Combined results across all peer evaluations (lower score is better):
           </p>

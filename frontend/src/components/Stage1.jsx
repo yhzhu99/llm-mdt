@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import Markdown from './Markdown';
+import CopyButton from './CopyButton';
 import './Stage1.css';
 
 export default function Stage1({ responses }) {
@@ -27,6 +28,13 @@ export default function Stage1({ responses }) {
 
       <div className="tab-content">
         <div className="model-name">{responses[activeTab].model}</div>
+        <div className="stage-actions">
+          <CopyButton
+            label="Copy"
+            successLabel="Copied"
+            getText={() => responses[activeTab].response || ''}
+          />
+        </div>
         <div className="response-text markdown-content">
           <Markdown>{responses[activeTab].response}</Markdown>
         </div>

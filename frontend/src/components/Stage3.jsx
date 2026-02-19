@@ -1,4 +1,5 @@
 import Markdown from './Markdown';
+import CopyButton from './CopyButton';
 import './Stage3.css';
 
 export default function Stage3({ finalResponse }) {
@@ -12,6 +13,13 @@ export default function Stage3({ finalResponse }) {
       <div className="final-response">
         <div className="chairman-label">
           Chairman: {finalResponse.model.split('/')[1] || finalResponse.model}
+        </div>
+        <div className="stage-actions">
+          <CopyButton
+            label="Copy"
+            successLabel="Copied"
+            getText={() => finalResponse.response || ''}
+          />
         </div>
         <div className="final-text markdown-content">
           <Markdown>{finalResponse.response}</Markdown>
