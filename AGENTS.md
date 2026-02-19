@@ -145,6 +145,12 @@ Models are hardcoded in `backend/config.py`. Chairman can be same or different f
 
 Use `test_openrouter.py` to verify API connectivity and test different model identifiers before adding to council. The script tests both streaming and non-streaming modes.
 
+## Git Workflow Notes (Cherry-pick Friendly)
+
+- Make changes in small, self-contained commits so they can be `git cherry-pick`ed cleanly.
+- **Always use Conventional Commits** for commit messages (e.g. `feat(ui): ...`, `fix(backend): ...`, `style(frontend): ...`).
+- Prefer splitting unrelated concerns into separate commits (e.g. UI styling vs API behavior) to keep cherry-picks minimal and low-risk.
+
 ## Data Flow Summary
 
 ```
