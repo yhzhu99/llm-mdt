@@ -9,6 +9,9 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Draft conversation: created when user lands on main panel and starts typing.
+  // It is NOT added to the sidebar until the first message is actually sent.
+  const [draftConversationId, setDraftConversationId] = useState(null);
 
   const loadConversations = async () => {
     try {
@@ -40,34 +43,59 @@ function App() {
     }
   }, [currentConversationId]);
 
-  const handleNewConversation = async () => {
-    try {
-      const newConv = await api.createConversation();
-      setConversations([
-        { id: newConv.id, created_at: newConv.created_at, message_count: 0 },
-        ...conversations,
-      ]);
-      setCurrentConversationId(newConv.id);
-    } catch (error) {
-      console.error('Failed to create conversation:', error);
-    }
+  const handleNewConversation = () => {
+    setCurrentConversationId(null);
+    setCurrentConversation(null);
+    setDraftConversationId(null);
   };
 
   const handleSelectConversation = (id) => {
     setCurrentConversationId(id);
   };
 
+  const ensureConversationForSend = async () => {
+    if (currentConversationId) return currentConversationId;
+
+    // If user is sending from the landing page, lazily create a draft conversation
+    // (kept out of the sidebar until a message is successfully sent).
+    if (draftConversationId) {
+      setCurrentConversationId(draftConversationId);
+      return draftConversationId;
+    }
+
+    const newConv = await api.createConversation();
+    setDraftConversationId(newConv.id);
+    setCurrentConversationId(newConv.id);
+    return newConv.id;
+  };
+
   const handleSendMessage = async (content) => {
-    if (!currentConversationId) return;
+    let conversationIdForRequest;
+
+    try {
+      conversationIdForRequest = await ensureConversationForSend();
+    } catch (error) {
+      console.error('Failed to create conversation:', error);
+      return;
+    }
 
     setIsLoading(true);
-    const conversationIdForRequest = currentConversationId;
     try {
+      // Ensure we have a local conversation object for optimistic UI.
+      setCurrentConversation((prev) => {
+        if (prev) return prev;
+        return {
+          id: conversationIdForRequest,
+          created_at: new Date().toISOString(),
+          messages: [],
+        };
+      });
+
       // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
       setCurrentConversation((prev) => ({
         ...prev,
-        messages: [...prev.messages, userMessage],
+        messages: [...(prev?.messages || []), userMessage],
       }));
 
       const assistantMessageId =
@@ -92,7 +120,7 @@ function App() {
       // Add the partial assistant message
       setCurrentConversation((prev) => ({
         ...prev,
-        messages: [...prev.messages, assistantMessage],
+        messages: [...(prev?.messages || []), assistantMessage],
       }));
 
       const updateAssistantMessage = (recipeFn) => {
@@ -197,6 +225,10 @@ function App() {
       if (conversationIdForRequest === currentConversationId) {
         await loadConversation(conversationIdForRequest);
       }
+
+      // If this message was sent in a draft conversation, it now has content
+      // and should appear in the sidebar.
+      setDraftConversationId((prev) => (prev === conversationIdForRequest ? null : prev));
       setIsLoading(false);
     } catch (error) {
       console.error('Failed to send message:', error);
@@ -221,6 +253,7 @@ function App() {
         conversation={currentConversation}
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
+        onNewConversation={handleNewConversation}
       />
     </div>
   );
