@@ -41,17 +41,7 @@ npm install
 cd ..
 ```
 
-### 2. Configure API Key
-
-Create a `.env` file in the project root:
-
-```bash
-OPENROUTER_API_KEY=sk-or-v1-...
-```
-
-Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
-
-### 2.1 Configure API Base URL (OpenRouter / ZenMax)
+### 2. Configure API Base URL (OpenRouter / ZenMax)
 
 This project uses an **OpenAI-compatible** Chat Completions endpoint. By default you can use **OpenRouter** directly, or route requests via **ZenMax** (as an API relay).
 
@@ -62,16 +52,25 @@ This project uses an **OpenAI-compatible** Chat Completions endpoint. By default
 
 If your deployment supports it, set the base URL via environment variable or update `backend/config.py` (`OPENROUTER_API_URL`) to point to the endpoint you want.
 
-### 3. Configure Models (Optional)
+### 3. Configure API Key
+
+Create a `.env` file in the project root:
+
+```bash
+OPENROUTER_API_KEY=sk-or-v1-...
+```
+
+Get your API key at [openrouter.ai](https://openrouter.ai/) or [https://zenmux.ai](https://zenmux.ai/). Make sure to purchase the credits you need.
+
+### 4. Configure Models (Optional)
 
 Edit `backend/config.py` to customize the council:
 
 ```python
 COUNCIL_MODELS = [
-    "openai/gpt-5.1",
+    "openai/gpt-5.2",
     "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.5",
-    "x-ai/grok-4",
+    "anthropic/claude-sonnet-4.6",
 ]
 
 CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
@@ -108,6 +107,4 @@ Then open http://localhost:5173 in your browser.
 
 ## Acknowledgements
 
-This project is based on and adapted from Andrej Karpathy's open-source project `llm-council`:
-
-- `https://github.com/karpathy/llm-council`
+This project is based on and adapted from Andrej Karpathy's open-source project [llm-council](https://github.com/karpathy/llm-council)
