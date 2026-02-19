@@ -89,27 +89,54 @@ export const api = {
       throw new Error('Failed to send message');
     }
 
+    if (!response.body) {
+      throw new Error('Streaming response body is empty');
+    }
+
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
+    let buffer = '';
+
+    const parseEventBlock = (block) => {
+      // SSE event is a set of lines; we only care about one or more `data:` lines.
+      const lines = block.split(/\r?\n/);
+      const dataLines = [];
+      for (const line of lines) {
+        if (line.startsWith('data:')) {
+          dataLines.push(line.slice(5).trimStart());
+        }
+      }
+      if (dataLines.length === 0) return;
+
+      const data = dataLines.join('\n');
+      try {
+        const event = JSON.parse(data);
+        onEvent(event.type, event);
+      } catch (e) {
+        console.error('Failed to parse SSE event:', e, { data });
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      const chunk = decoder.decode(value);
-      const lines = chunk.split('\n');
+      buffer += decoder.decode(value, { stream: true });
 
-      for (const line of lines) {
-        if (line.startsWith('data: ')) {
-          const data = line.slice(6);
-          try {
-            const event = JSON.parse(data);
-            onEvent(event.type, event);
-          } catch (e) {
-            console.error('Failed to parse SSE event:', e);
-          }
-        }
+      // SSE events are separated by a blank line.
+      // Keep the last partial block in `buffer` if it's incomplete.
+      const parts = buffer.split(/\r?\n\r?\n/);
+      buffer = parts.pop() ?? '';
+      for (const part of parts) {
+        if (part.trim().length === 0) continue;
+        parseEventBlock(part);
       }
+    }
+
+    // Flush any remaining complete event (best-effort).
+    const tail = buffer.trim();
+    if (tail.length > 0) {
+      parseEventBlock(tail);
     }
   },
 };
