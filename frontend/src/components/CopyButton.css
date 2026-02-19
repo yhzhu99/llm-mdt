@@ -1,3 +1,9 @@
+.copy-button__wrap {
+  display: inline-flex;
+  align-items: center;
+  position: relative;
+}
+
 .copy-button {
   border: 1px solid rgba(15, 23, 42, 0.14);
   background: rgba(255, 255, 255, 0.9);
@@ -39,4 +45,20 @@
 
 .copy-button__text {
   font-weight: 700;
+}
+
+.copy-button__toast {
+  position: absolute;
+  top: -10px;
+  right: 0;
+  transform: translateY(-100%);
+  background: rgba(15, 23, 42, 0.9);
+  color: #fff;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  z-index: 100;
 }

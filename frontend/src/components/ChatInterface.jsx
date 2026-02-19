@@ -282,7 +282,12 @@ export default function ChatInterface({
                       </div>
                     </div>
                   )}
-                  {msg.stage1 && <Stage1 responses={msg.stage1} streamState={msg.stream?.stage1} />}
+                  {(msg.stage1 || (msg.stream?.stage1 && Object.keys(msg.stream.stage1).length > 0)) && (
+                    <Stage1
+                      responses={msg.stage1 || []}
+                      streamState={msg.stream?.stage1}
+                    />
+                  )}
 
                   {/* Stage 2 */}
                   {msg.loading?.stage2 && (
@@ -295,9 +300,9 @@ export default function ChatInterface({
                       </div>
                     </div>
                   )}
-                  {msg.stage2 && (
+                  {(msg.stage2 || (msg.stream?.stage2 && Object.keys(msg.stream.stage2).length > 0)) && (
                     <Stage2
-                      rankings={msg.stage2}
+                      rankings={msg.stage2 || []}
                       labelToModel={msg.metadata?.label_to_model}
                       aggregateRankings={msg.metadata?.aggregate_rankings}
                       streamState={msg.stream?.stage2}
@@ -315,7 +320,9 @@ export default function ChatInterface({
                       </div>
                     </div>
                   )}
-                  {msg.stage3 && <Stage3 finalResponse={msg.stage3} streamState={msg.stream?.stage3} />}
+                  {(msg.stage3 || (msg.stream?.stage3 && (msg.stream.stage3.response || msg.stream.stage3.thinking))) && (
+                    <Stage3 finalResponse={msg.stage3} streamState={msg.stream?.stage3} />
+                  )}
 
                   <TraceLog assistantMessage={msg} />
                   </div>

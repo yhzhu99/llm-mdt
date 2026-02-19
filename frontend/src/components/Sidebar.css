@@ -247,6 +247,8 @@
   padding: 8px 10px;
   font-size: 14px;
   outline: none;
+  position: relative;
+  z-index: 40;
 }
 
 .conversation-rename:focus {

@@ -43,19 +43,27 @@ export default function CopyButton({
   };
 
   const display = status === 'success' ? successLabel : label;
-  const visibleText = iconOnly ? (status === 'success' ? 'Copied' : '') : display;
+  const showToast = iconOnly && status === 'success';
+  const visibleText = iconOnly ? '' : display;
 
   return (
-    <button
-      type="button"
-      className={`copy-button ${iconOnly ? 'icon-only' : ''} ${className}`.trim()}
-      onClick={onCopy}
-      title={title || label}
-    >
-      <span className="copy-button__icon" aria-hidden="true">
-        ⧉
-      </span>
-      {visibleText ? <span className="copy-button__text">{visibleText}</span> : null}
-    </button>
+    <span className={`copy-button__wrap ${className}`.trim()}>
+      <button
+        type="button"
+        className={`copy-button ${iconOnly ? 'icon-only' : ''}`.trim()}
+        onClick={onCopy}
+        title={title || label}
+      >
+        <span className="copy-button__icon" aria-hidden="true">
+          ⧉
+        </span>
+        {visibleText ? <span className="copy-button__text">{visibleText}</span> : null}
+      </button>
+      {showToast ? (
+        <span className="copy-button__toast" role="status" aria-live="polite">
+          {successLabel}
+        </span>
+      ) : null}
+    </span>
   );
 }

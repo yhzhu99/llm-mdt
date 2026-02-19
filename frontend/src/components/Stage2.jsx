@@ -35,14 +35,21 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
 
-  if (!rankings || rankings.length === 0) {
+  const modelsFromStream = streamState ? Object.keys(streamState) : [];
+  const tabs = (rankings || []).map((r) => r?.model).filter(Boolean);
+  for (const m of modelsFromStream) {
+    if (!tabs.includes(m)) tabs.push(m);
+  }
+
+  if (tabs.length === 0) {
     return null;
   }
 
-  const activeRanking = rankings[activeTab];
-  const rawText = activeRanking?.ranking || '';
+  const activeModel = tabs[Math.min(activeTab, tabs.length - 1)];
+  const activeRanking = (rankings || []).find((r) => r?.model === activeModel) || { model: activeModel, ranking: '', parsed_ranking: [] };
+  const streamForActive = (streamState && activeModel && streamState[activeModel]) || null;
+  const rawText = activeRanking?.ranking || streamForActive?.ranking || '';
   const displayText = deAnonymizeText(rawText, labelToModel);
-  const streamForActive = (streamState && activeRanking?.model && streamState[activeRanking.model]) || null;
   const thinkingText =
     activeRanking?.reasoning_details ?? streamForActive?.thinking ?? '';
   const displayThinking = deAnonymizeText(thinkingText, labelToModel);
@@ -53,13 +60,13 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
       subtitle="Peer evaluation and rankings (de-anonymized for readability)"
     >
       <div className="stage-tabs">
-        {rankings.map((rank, index) => (
+        {tabs.map((model, index) => (
           <button
             key={index}
             className={`stage-tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
-            {rank.model.split('/')[1] || rank.model}
+            {model.split('/')[1] || model}
           </button>
         ))}
       </div>

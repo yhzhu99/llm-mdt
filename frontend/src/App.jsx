@@ -51,6 +51,23 @@ function App() {
     }
   };
 
+  const upsertConversationInSidebar = (conv) => {
+    if (!conv?.id) return;
+    setConversations((prev) => {
+      const list = Array.isArray(prev) ? prev : [];
+      const idx = list.findIndex((c) => c?.id === conv.id);
+      const next = [...list];
+      if (idx === -1) {
+        next.unshift(conv);
+      } else {
+        next[idx] = { ...next[idx], ...conv };
+      }
+      // keep newest first
+      next.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      return next;
+    });
+  };
+
   const loadConversation = async (id) => {
     try {
       const conv = await api.getConversation(id);
@@ -166,8 +183,17 @@ function App() {
         return {
           id: conversationIdForRequest,
           created_at: new Date().toISOString(),
+          title: 'New Conversation',
           messages: [],
         };
+      });
+
+      // Optimistically show this conversation in the sidebar immediately.
+      upsertConversationInSidebar({
+        id: conversationIdForRequest,
+        created_at: new Date().toISOString(),
+        title: 'New Conversation',
+        message_count: 1,
       });
 
       // Optimistically add user message to UI
@@ -228,6 +254,22 @@ function App() {
         });
       };
 
+      // Coalesce high-frequency stream updates to reduce re-render churn.
+      const streamUpdateQueueRef = { current: [] };
+      const streamUpdateScheduledRef = { current: false };
+      const enqueueAssistantUpdate = (fn) => {
+        streamUpdateQueueRef.current.push(fn);
+        if (streamUpdateScheduledRef.current) return;
+        streamUpdateScheduledRef.current = true;
+        window.requestAnimationFrame(() => {
+          streamUpdateScheduledRef.current = false;
+          const fns = streamUpdateQueueRef.current;
+          streamUpdateQueueRef.current = [];
+          if (fns.length === 0) return;
+          updateAssistantMessage((msg) => fns.reduce((acc, one) => one(acc), msg));
+        });
+      };
+
       // Send message with streaming
       await api.sendMessageStream(
         conversationIdForRequest,
@@ -242,7 +284,7 @@ function App() {
             break;
 
           case 'stage1_model_start':
-            updateAssistantMessage((msg) => ({
+            enqueueAssistantUpdate((msg) => ({
               ...msg,
               stream: {
                 ...msg.stream,
@@ -255,7 +297,7 @@ function App() {
             break;
 
           case 'stage1_model_delta':
-            updateAssistantMessage((msg) => {
+            enqueueAssistantUpdate((msg) => {
               const prev = msg.stream?.stage1?.[event.model] || { response: '', thinking: '' };
               const next = { ...prev };
               if (event.delta_type === 'content') next.response += event.text || '';
@@ -290,7 +332,7 @@ function App() {
             break;
 
           case 'stage2_model_start':
-            updateAssistantMessage((msg) => ({
+            enqueueAssistantUpdate((msg) => ({
               ...msg,
               stream: {
                 ...msg.stream,
@@ -303,7 +345,7 @@ function App() {
             break;
 
           case 'stage2_model_delta':
-            updateAssistantMessage((msg) => {
+            enqueueAssistantUpdate((msg) => {
               const prev = msg.stream?.stage2?.[event.model] || { ranking: '', thinking: '' };
               const next = { ...prev };
               if (event.delta_type === 'content') next.ranking += event.text || '';
@@ -343,7 +385,7 @@ function App() {
             break;
 
           case 'stage3_delta':
-            updateAssistantMessage((msg) => {
+            enqueueAssistantUpdate((msg) => {
               const prev = msg.stream?.stage3 || { response: '', thinking: '' };
               const next = { ...prev };
               if (event.delta_type === 'content') next.response += event.text || '';
@@ -366,6 +408,13 @@ function App() {
 
           case 'title_complete':
             // Reload conversations to get updated title
+            // Optimistically patch title in sidebar immediately (server list refresh still happens later).
+            if (event?.data?.title) {
+              upsertConversationInSidebar({
+                id: conversationIdForRequest,
+                title: event.data.title,
+              });
+            }
             loadConversations();
             break;
 

@@ -23,13 +23,25 @@ export default function Stage1({ responses, streamState }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
 
-  if (!responses || responses.length === 0) {
+  const modelsFromStream = streamState ? Object.keys(streamState) : [];
+  const tabs = (responses || []).map((r) => r?.model).filter(Boolean);
+  for (const m of modelsFromStream) {
+    if (!tabs.includes(m)) tabs.push(m);
+  }
+
+  if (tabs.length === 0) {
     return null;
   }
 
-  const active = responses[activeTab];
-  const streamForActive = (streamState && active?.model && streamState[active.model]) || null;
-  const thinkingText = active?.reasoning_details ?? streamForActive?.thinking ?? '';
+  const activeModel = tabs[Math.min(activeTab, tabs.length - 1)];
+  const active = (responses || []).find((r) => r?.model === activeModel) || { model: activeModel, response: '' };
+  const streamForActive = (streamState && activeModel && streamState[activeModel]) || null;
+  const thinkingText =
+    active?.reasoning_details ?? streamForActive?.thinking ?? '';
+  const responseText =
+    (active?.response && String(active.response)) ||
+    streamForActive?.response ||
+    '';
 
   return (
     <StageCard
@@ -37,13 +49,13 @@ export default function Stage1({ responses, streamState }) {
       subtitle="Individual model responses"
     >
       <div className="stage-tabs">
-        {responses.map((resp, index) => (
+        {tabs.map((model, index) => (
           <button
             key={index}
             className={`stage-tab ${activeTab === index ? 'active' : ''}`}
             onClick={() => setActiveTab(index)}
           >
-            {resp.model.split('/')[1] || resp.model}
+            {model.split('/')[1] || model}
           </button>
         ))}
       </div>
@@ -69,7 +81,7 @@ export default function Stage1({ responses, streamState }) {
           </div>
         </div>
         <div className="response-text markdown-content">
-          <Markdown>{active.response}</Markdown>
+          <Markdown>{responseText}</Markdown>
         </div>
 
         {showThinking && (

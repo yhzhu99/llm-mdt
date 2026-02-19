@@ -21,16 +21,16 @@ function ThinkingBlock({ text }) {
 
 export default function Stage3({ finalResponse, streamState }) {
   const [showThinking, setShowThinking] = React.useState(false);
-  if (!finalResponse) {
-    return null;
-  }
-
+  const model = finalResponse?.model || 'chairman';
+  const responseText = finalResponse?.response || streamState?.response || '';
   const thinkingText = finalResponse?.reasoning_details ?? streamState?.thinking ?? '';
+
+  if (!responseText && !thinkingText) return null;
 
   return (
     <StageCard
       title="Stage 3"
-      subtitle={`Final synthesis (Chairman: ${finalResponse.model.split('/')[1] || finalResponse.model})`}
+      subtitle={`Final synthesis (Chairman: ${model.split('/')[1] || model})`}
       className="stage3"
       right={
         <div className="stage-actions">
@@ -38,7 +38,7 @@ export default function Stage3({ finalResponse, streamState }) {
             iconOnly
             label="Copy"
             successLabel="Copied"
-            getText={() => finalResponse.response || ''}
+            getText={() => responseText || ''}
           />
           <button
             type="button"
@@ -52,7 +52,7 @@ export default function Stage3({ finalResponse, streamState }) {
       }
     >
       <div className="final-text markdown-content">
-        <Markdown>{finalResponse.response}</Markdown>
+        <Markdown>{responseText}</Markdown>
       </div>
 
       {showThinking && (
