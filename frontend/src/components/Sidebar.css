@@ -175,11 +175,6 @@
   text-overflow: ellipsis;
 }
 
-.conversation-meta {
-  color: rgba(15, 23, 42, 0.5);
-  font-size: 12px;
-}
-
 .conversation-row-main {
   display: flex;
   align-items: center;

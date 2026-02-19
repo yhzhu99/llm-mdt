@@ -160,7 +160,6 @@ function ConversationRow({ conv, active, collapsed, onSelect, onDelete, onRename
               ···
             </button>
           </div>
-          <div className="conversation-meta">{conv.message_count} messages</div>
 
           {open && (
             <>
