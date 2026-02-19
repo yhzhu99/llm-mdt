@@ -15,6 +15,8 @@
   --radius-sm: 10px;
   --radius-md: 16px;
   --radius-lg: 22px;
+
+  --topbar-height: 60px;
 }
 
 /* small utility, similar to MedX' scrollbar-hide */
@@ -25,4 +27,3 @@
 .scrollbar-hide::-webkit-scrollbar {
   display: none; /* Chrome, Safari and Opera */
 }
-

@@ -1,17 +1,28 @@
 import './Sidebar.css';
+import { useState } from 'react';
 
 export default function Sidebar({
   conversations,
+  groupedConversations,
   currentConversationId,
   onSelectConversation,
   onNewConversation,
+  onDeleteConversation,
+  onRenameConversation,
+  isCollapsed,
+  onToggleCollapsed,
 }) {
   const visibleConversations = (conversations || []).filter(
     (c) => (c?.message_count ?? 0) > 0
   );
 
+  const groups = groupedConversations || { Recent: visibleConversations };
+  const groupEntries = Object.entries(groups).filter(
+    ([, list]) => (list || []).filter((c) => (c?.message_count ?? 0) > 0).length > 0
+  );
+
   return (
-    <div className="sidebar">
+    <div className={`sidebar ${isCollapsed ? 'collapsed' : ''}`}>
       <div className="sidebar-header">
         <div
           className="brand"
@@ -24,43 +35,153 @@ export default function Sidebar({
           }}
         >
           <div className="brand-icon">C</div>
-          <div className="brand-name">LLM Council</div>
+          {!isCollapsed && <div className="brand-name">LLM Council</div>}
         </div>
+
+        <button
+          type="button"
+          className="sidebar-toggle"
+          onClick={onToggleCollapsed}
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {isCollapsed ? '›' : '‹'}
+        </button>
       </div>
 
-      <div className="conversation-list">
+      <div className="conversation-list scrollbar-hide">
         {visibleConversations.length === 0 ? (
           <div className="no-conversations">No conversations yet</div>
         ) : (
-          <div className="conversation-group">
-            <div className="conversation-group-title">Recent</div>
-            <div className="conversation-group-list">
-              {visibleConversations.map((conv) => (
-                <div
-                  key={conv.id}
-                  className={`conversation-item ${
-                    conv.id === currentConversationId ? 'active' : ''
-                  }`}
-                  onClick={() => onSelectConversation(conv.id)}
-                  title={conv.title || 'Conversation'}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') onSelectConversation?.(conv.id);
-                  }}
-                >
-                  <div className="conversation-title">
-                    {conv.title || 'Conversation'}
-                  </div>
-                  <div className="conversation-meta">
-                    {conv.message_count} messages
-                  </div>
-                </div>
-              ))}
+          groupEntries.map(([groupName, list]) => (
+            <div className="conversation-group" key={groupName}>
+              {!isCollapsed && <div className="conversation-group-title">{groupName}</div>}
+              <div className="conversation-group-list">
+                {list
+                  .filter((c) => (c?.message_count ?? 0) > 0)
+                  .map((conv) => (
+                    <ConversationRow
+                      key={conv.id}
+                      conv={conv}
+                      active={conv.id === currentConversationId}
+                      collapsed={!!isCollapsed}
+                      onSelect={() => onSelectConversation(conv.id)}
+                      onDelete={() => onDeleteConversation?.(conv.id)}
+                      onRename={(title) => onRenameConversation?.(conv.id, title)}
+                    />
+                  ))}
+              </div>
             </div>
-          </div>
+          ))
         )}
       </div>
+    </div>
+  );
+}
+
+function ConversationRow({ conv, active, collapsed, onSelect, onDelete, onRename }) {
+  const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draftTitle, setDraftTitle] = useState(conv.title || '');
+
+  return (
+    <div
+      className={`conversation-item ${active ? 'active' : ''} ${collapsed ? 'collapsed' : ''}`}
+      onClick={onSelect}
+      title={conv.title || 'Conversation'}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') onSelect?.();
+      }}
+    >
+      {!collapsed ? (
+        <>
+          <div className="conversation-row-main">
+            {renaming ? (
+              <input
+                className="conversation-rename"
+                value={draftTitle}
+                autoFocus
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setDraftTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    setRenaming(false);
+                    onRename?.(draftTitle.trim() || 'Conversation');
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setRenaming(false);
+                    setDraftTitle(conv.title || '');
+                  }
+                }}
+                onBlur={() => {
+                  setRenaming(false);
+                  if ((draftTitle || '').trim() !== (conv.title || '').trim()) {
+                    onRename?.((draftTitle || '').trim() || 'Conversation');
+                  }
+                }}
+              />
+            ) : (
+              <div className="conversation-title">
+                {conv.title || 'Conversation'}
+              </div>
+            )}
+            <button
+              type="button"
+              className="conversation-more"
+              onClick={(e) => {
+                e.stopPropagation();
+                setOpen((v) => !v);
+              }}
+              title="More"
+            >
+              ···
+            </button>
+          </div>
+          <div className="conversation-meta">{conv.message_count} messages</div>
+
+          {open && (
+            <>
+              <div
+                className="dropdown-overlay"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setOpen(false);
+                }}
+              />
+              <div
+                className="conversation-dropdown"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setOpen(false);
+                    setRenaming(true);
+                    setDraftTitle(conv.title || '');
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  className="dropdown-item danger"
+                  onClick={() => {
+                    setOpen(false);
+                    onDelete?.();
+                  }}
+                >
+                  Delete
+                </button>
+              </div>
+            </>
+          )}
+        </>
+      ) : (
+        <div className="conversation-dot" />
+      )}
     </div>
   );
 }

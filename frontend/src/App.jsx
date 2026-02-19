@@ -1,8 +1,35 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import TopBar from './components/TopBar';
 import { api } from './api';
 import './App.css';
+
+const groupConversationsByDate = (conversations) => {
+  const groups = {};
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const oneWeekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const oneMonthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+  const sorted = [...(conversations || [])].sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  );
+
+  for (const conv of sorted) {
+    const d = new Date(conv.created_at);
+    const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    let groupName = '';
+    if (day.getTime() === today.getTime()) groupName = 'Today';
+    else if (day.getTime() > oneWeekAgo.getTime()) groupName = 'Last 7 days';
+    else if (day.getTime() > oneMonthAgo.getTime()) groupName = 'Last 30 days';
+    else groupName = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+
+    if (!groups[groupName]) groups[groupName] = [];
+    groups[groupName].push(conv);
+  }
+  return groups;
+};
 
 function App() {
   const [conversations, setConversations] = useState([]);
@@ -12,6 +39,7 @@ function App() {
   // Draft conversation: created when user lands on main panel and starts typing.
   // It is NOT added to the sidebar until the first message is actually sent.
   const [draftConversationId, setDraftConversationId] = useState(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   const loadConversations = async () => {
     try {
@@ -47,6 +75,30 @@ function App() {
     setCurrentConversationId(null);
     setCurrentConversation(null);
     setDraftConversationId(null);
+  };
+
+  const handleDeleteConversation = async (id) => {
+    try {
+      await api.deleteConversation(id);
+      if (currentConversationId === id) {
+        handleNewConversation();
+      }
+      await loadConversations();
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+    }
+  };
+
+  const handleRenameConversation = async (id, title) => {
+    try {
+      await api.renameConversation(id, title);
+      await loadConversations();
+      if (currentConversationId === id) {
+        await loadConversation(id);
+      }
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+    }
   };
 
   const handleSelectConversation = (id) => {
@@ -245,16 +297,24 @@ function App() {
     <div className="app">
       <Sidebar
         conversations={conversations}
+        groupedConversations={groupConversationsByDate(conversations)}
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        onDeleteConversation={handleDeleteConversation}
+        onRenameConversation={handleRenameConversation}
+        isCollapsed={isSidebarCollapsed}
+        onToggleCollapsed={() => setIsSidebarCollapsed((v) => !v)}
       />
-      <ChatInterface
-        conversation={currentConversation}
-        onSendMessage={handleSendMessage}
-        isLoading={isLoading}
-        onNewConversation={handleNewConversation}
-      />
+      <div className="main">
+        <TopBar title={currentConversation?.title || 'LLM Council'} />
+        <ChatInterface
+          conversation={currentConversation}
+          onSendMessage={handleSendMessage}
+          isLoading={isLoading}
+          onNewConversation={handleNewConversation}
+        />
+      </div>
     </div>
   );
 }
