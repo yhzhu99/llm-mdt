@@ -307,7 +307,11 @@ function App() {
         onToggleCollapsed={() => setIsSidebarCollapsed((v) => !v)}
       />
       <div className="main">
-        <TopBar title={currentConversation?.title || 'LLM Council'} />
+        <TopBar
+          title={currentConversation?.title || 'LLM Council'}
+          onNewConversation={handleNewConversation}
+          onRefresh={loadConversations}
+        />
         <ChatInterface
           conversation={currentConversation}
           onSendMessage={handleSendMessage}
