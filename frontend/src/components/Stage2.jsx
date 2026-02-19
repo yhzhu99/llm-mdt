@@ -4,9 +4,9 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage2.css';
 
-function ModelThinking({ status, hasText }) {
+function ModelThinking({ status, hasThinking }) {
   if (status !== 'running') return null;
-  if (hasText) return null;
+  if (!hasThinking) return null;
   return (
     <div className="stage-thinking-inline" aria-live="polite">
       <div className="spinner"></div>
@@ -80,7 +80,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
   const thinkingText =
     activeRanking?.reasoning_details ?? streamForActive?.thinking ?? '';
   const displayThinking = deAnonymizeText(thinkingText, labelToModel);
-  const hasAnyText = (rawText && rawText.length > 0) || (thinkingText && thinkingText.length > 0);
+  const hasThinking = !!(thinkingText && thinkingText.length > 0);
   const activeStatus = streamMeta?.[activeModel]?.status || (activeRanking ? 'complete' : 'idle');
 
   return (
@@ -123,7 +123,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
           </div>
         </div>
         <div className="ranking-content markdown-content">
-          <ModelThinking status={activeStatus} hasText={hasAnyText} />
+          <ModelThinking status={activeStatus} hasThinking={hasThinking} />
           <Markdown>
             {displayText}
           </Markdown>
