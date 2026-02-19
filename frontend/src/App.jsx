@@ -39,7 +39,7 @@ function App() {
   // Draft conversation: created when user lands on main panel and starts typing.
   // It is NOT added to the sidebar until the first message is actually sent.
   const [draftConversationId, setDraftConversationId] = useState(null);
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isSidebarCollapsed] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState('connecting'); // connected | connecting | disconnected
 
   const loadConversations = async () => {
@@ -531,23 +531,23 @@ function App() {
 
   return (
     <div className="app">
-      <Sidebar
-        conversations={conversations}
-        groupedConversations={groupConversationsByDate(conversations)}
-        currentConversationId={currentConversationId}
-        onSelectConversation={handleSelectConversation}
-        onNewConversation={handleNewConversation}
-        onDeleteConversation={handleDeleteConversation}
-        onRenameConversation={handleRenameConversation}
-        isCollapsed={isSidebarCollapsed}
-        onToggleCollapsed={() => setIsSidebarCollapsed((v) => !v)}
-      />
+        <Sidebar
+          conversations={conversations}
+          groupedConversations={groupConversationsByDate(conversations)}
+          currentConversationId={currentConversationId}
+          onSelectConversation={handleSelectConversation}
+          onNewConversation={handleNewConversation}
+          onDeleteConversation={handleDeleteConversation}
+          onRenameConversation={handleRenameConversation}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapsed={null}
+        />
       <div className="main">
         <TopBar
           title={currentConversation?.title || 'LLM Council'}
           status={connectionStatus}
-          onNewConversation={handleNewConversation}
-          onRefresh={loadConversations}
+          onNewConversation={null}
+          onRefresh={null}
         />
         <ChatInterface
           conversation={currentConversation}

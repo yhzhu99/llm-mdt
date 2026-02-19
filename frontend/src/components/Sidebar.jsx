@@ -12,6 +12,8 @@ export default function Sidebar({
   isCollapsed,
   onToggleCollapsed,
 }) {
+  const collapsible = typeof onToggleCollapsed === 'function';
+
   const visibleConversations = (conversations || []).filter(
     (c) => (c?.message_count ?? 0) > 0
   );
@@ -38,14 +40,16 @@ export default function Sidebar({
           {!isCollapsed && <div className="brand-name">LLM Council</div>}
         </div>
 
-        <button
-          type="button"
-          className="sidebar-toggle btn ghost"
-          onClick={onToggleCollapsed}
-          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {isCollapsed ? '›' : '‹'}
-        </button>
+        {collapsible ? (
+          <button
+            type="button"
+            className="sidebar-toggle btn ghost"
+            onClick={onToggleCollapsed}
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
+            {isCollapsed ? '›' : '‹'}
+          </button>
+        ) : null}
       </div>
 
       <div className="sidebar-actions">
