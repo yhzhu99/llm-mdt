@@ -13,7 +13,7 @@ export default function TopBar({
     <header className="topbar">
       <div className="topbar-left">
         <div className={`status-dot ${status}`} title={status} />
-        <div className="topbar-title">{title || 'LLM Council'}</div>
+        <div className="topbar-title">{title || 'LLM MDT'}</div>
       </div>
       {showActions ? (
         <div className="topbar-right">

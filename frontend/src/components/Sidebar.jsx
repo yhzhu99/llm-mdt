@@ -37,7 +37,7 @@ export default function Sidebar({
           }}
         >
           <div className="brand-icon">C</div>
-          {!isCollapsed && <div className="brand-name">LLM Council</div>}
+          {!isCollapsed && <div className="brand-name">LLM MDT</div>}
         </div>
 
         {collapsible ? (

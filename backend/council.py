@@ -1,4 +1,4 @@
-"""3-stage LLM Council orchestration."""
+"""3-stage LLM MDT orchestration."""
 
 from typing import List, Dict, Any, Tuple, AsyncIterator
 from .openrouter import query_models_parallel, query_model, query_model_stream
@@ -394,7 +394,7 @@ async def stage3_synthesize_final(
         for result in stage2_results
     ])
 
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+    chairman_prompt = f"""You are the Chairman of an LLM MDT. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
 
 Original Question: {user_query}
 
@@ -444,7 +444,7 @@ async def stage3_synthesize_final_stream(
         for result in stage2_results
     ])
 
-    chairman_prompt = f"""You are the Chairman of an LLM Council. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
+    chairman_prompt = f"""You are the Chairman of an LLM MDT. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
 
 Original Question: {user_query}
 

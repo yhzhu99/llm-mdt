@@ -115,7 +115,7 @@ export default function ChatInterface({
     return (
       <div className="chat-interface">
         <div className="empty-state">
-          <h2>Welcome to LLM Council</h2>
+          <h2>Welcome to LLM MDT</h2>
           <p>Start a new chat from here</p>
 
           <form className="input-form centered" onSubmit={handleSubmit}>
@@ -153,7 +153,7 @@ export default function ChatInterface({
         {conversation.messages.length === 0 ? (
           <div className="empty-state">
             <h2>Start a conversation</h2>
-            <p>Ask a question to consult the LLM Council</p>
+            <p>Ask a question to consult the LLM MDT</p>
           </div>
         ) : (
           conversation.messages.map((msg, index) => (
@@ -181,7 +181,7 @@ export default function ChatInterface({
                 <div className="assistant-message message-bubble">
                   <div className="assistant-card">
                     <div className="assistant-card-head">
-                      <div className="assistant-title">LLM Council</div>
+                      <div className="assistant-title">LLM MDT</div>
                     </div>
 
                   {(() => {

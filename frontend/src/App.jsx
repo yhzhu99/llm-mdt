@@ -585,7 +585,7 @@ function App() {
         />
       <div className="main">
         <TopBar
-          title={currentConversation?.title || 'LLM Council'}
+          title={currentConversation?.title || 'LLM MDT'}
           status={connectionStatus}
           onNewConversation={null}
           onRefresh={null}
