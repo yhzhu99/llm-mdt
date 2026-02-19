@@ -60,5 +60,5 @@
   white-space: nowrap;
   box-shadow: var(--shadow-sm);
   pointer-events: none;
-  z-index: 100;
+  z-index: 9999;
 }
