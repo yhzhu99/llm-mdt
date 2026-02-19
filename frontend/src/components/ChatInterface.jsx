@@ -234,6 +234,16 @@ export default function ChatInterface({
     );
   }
 
+  const hasStreamStage1 = !!(conversation?.messages || []).some(
+    (m) => m?.role === 'assistant' && m?.stream?.stage1 && Object.keys(m.stream.stage1).length > 0
+  );
+  const hasStreamStage2 = !!(conversation?.messages || []).some(
+    (m) => m?.role === 'assistant' && m?.stream?.stage2 && Object.keys(m.stream.stage2).length > 0
+  );
+  const hasStreamStage3 = !!(conversation?.messages || []).some(
+    (m) => m?.role === 'assistant' && m?.stream?.stage3 && (m.stream.stage3.response || m.stream.stage3.thinking)
+  );
+
   return (
     <div className="chat-interface">
       <div className="messages-container">
@@ -272,8 +282,8 @@ export default function ChatInterface({
                     </div>
 
                   {/* Stage 1 */}
-                  {msg.loading?.stage1 && (
-                    <div className="stage-loading">
+                  {msg.loading?.stage1 && !hasStreamStage1 && (
+                    <div className="stage-loading" aria-live="polite">
                       <div className="spinner"></div>
                       <div className="loading-lines">
                         <div className="skeleton-line w65 blue" />
@@ -290,8 +300,8 @@ export default function ChatInterface({
                   )}
 
                   {/* Stage 2 */}
-                  {msg.loading?.stage2 && (
-                    <div className="stage-loading">
+                  {msg.loading?.stage2 && !hasStreamStage2 && (
+                    <div className="stage-loading" aria-live="polite">
                       <div className="spinner"></div>
                       <div className="loading-lines">
                         <div className="skeleton-line w65" />
@@ -310,8 +320,8 @@ export default function ChatInterface({
                   )}
 
                   {/* Stage 3 */}
-                  {msg.loading?.stage3 && (
-                    <div className="stage-loading">
+                  {msg.loading?.stage3 && !hasStreamStage3 && (
+                    <div className="stage-loading" aria-live="polite">
                       <div className="spinner"></div>
                       <div className="loading-lines">
                         <div className="skeleton-line w65 green" />

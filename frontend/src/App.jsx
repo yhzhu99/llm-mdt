@@ -188,11 +188,13 @@ function App() {
         };
       });
 
+      const optimisticCreatedAt = currentConversation?.created_at || new Date().toISOString();
+
       // Optimistically show this conversation in the sidebar immediately.
       upsertConversationInSidebar({
         id: conversationIdForRequest,
-        created_at: new Date().toISOString(),
-        title: 'New Conversation',
+        created_at: optimisticCreatedAt,
+        title: currentConversation?.title || 'New Conversation',
         message_count: 1,
       });
 
