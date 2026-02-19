@@ -4,8 +4,7 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage1.css';
 
-function ModelThinking({ status, show }) {
-  if (status !== 'running') return null;
+function ModelThinking({ show }) {
   if (!show) return null;
   return (
     <div className="stage-thinking-inline" aria-live="polite">
@@ -40,19 +39,31 @@ function statusDot(status) {
   return <span className={cls} aria-hidden="true" />;
 }
 
-export default function Stage1({ responses, streamState, streamMeta }) {
+function TabThinking({ show }) {
+  if (!show) return null;
+  return (
+    <span className="tab-thinking" aria-label="thinking">
+      <span className="spinner tab-spinner" aria-hidden="true"></span>
+      <span className="tab-thinking-text">思考中</span>
+    </span>
+  );
+}
+
+export default function Stage1({ responses, streamState, streamMeta, councilOrder }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
 
   const tabs = useMemo(() => {
-    const preferred = Object.keys(streamMeta || {});
-    const set = new Set(preferred);
+    const preferred = Array.isArray(councilOrder) ? councilOrder.filter(Boolean) : [];
+    if (preferred.length > 0) return preferred;
+
+    // Fallback if runtime config isn't available: build a stable set from known keys.
+    const set = new Set();
     for (const r of responses || []) if (r?.model) set.add(r.model);
     for (const m of Object.keys(streamState || {})) if (m) set.add(m);
-    // If we know the configured order (via streamMeta), keep it stable.
-    // Anything else falls back to insertion order (still stable for this render).
-    return preferred.length > 0 ? [...preferred, ...[...set].filter((m) => !preferred.includes(m))] : [...set];
-  }, [responses, streamState, streamMeta]);
+    for (const m of Object.keys(streamMeta || {})) if (m) set.add(m);
+    return [...set];
+  }, [responses, streamState, streamMeta, councilOrder]);
 
   if (tabs.length === 0) {
     return null;
@@ -67,10 +78,16 @@ export default function Stage1({ responses, streamState, streamMeta }) {
     (active?.response && String(active.response)) ||
     streamForActive?.response ||
     '';
-  // Definition: show "thinking" until the model starts printing its main response.
-  // Reasoning/thinking tokens still count as "thinking"; they should not hide the indicator.
-  const showThinkingIndicator = !(responseText && responseText.length > 0);
-  const activeStatus = streamMeta?.[activeModel]?.status || (active ? 'complete' : 'idle');
+
+  const hasStartedMainOutput = (model) => {
+    const fromFinal = (responses || []).find((r) => r?.model === model)?.response;
+    const fromStream = streamState?.[model]?.response;
+    return !!((fromFinal && String(fromFinal).length > 0) || (fromStream && String(fromStream).length > 0));
+  };
+
+  // Definition: per-model "thinking" until it starts printing main output.
+  const isThinking = (model) => (streamMeta?.[model]?.status === 'running') && !hasStartedMainOutput(model);
+  const _activeStatus = streamMeta?.[activeModel]?.status || (active ? 'complete' : 'idle');
 
   return (
     <StageCard
@@ -86,6 +103,7 @@ export default function Stage1({ responses, streamState, streamMeta }) {
           >
             {statusDot(streamMeta?.[model]?.status)}
             {model.split('/')[1] || model}
+            <TabThinking show={isThinking(model)} />
           </button>
         ))}
       </div>
@@ -111,7 +129,7 @@ export default function Stage1({ responses, streamState, streamMeta }) {
           </div>
         </div>
         <div className="response-text markdown-content">
-          <ModelThinking status={activeStatus} show={showThinkingIndicator} />
+          <ModelThinking show={isThinking(activeModel)} />
           <Markdown>{responseText}</Markdown>
         </div>
 

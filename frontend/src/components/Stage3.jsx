@@ -4,9 +4,9 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage3.css';
 
-function ThinkingInline({ status, hasThinking }) {
+function ThinkingInline({ status, show }) {
   if (status !== 'running') return null;
-  if (!hasThinking) return null;
+  if (!show) return null;
   return (
     <div className="stage-thinking-inline" aria-live="polite">
       <div className="spinner"></div>
@@ -33,22 +33,26 @@ function ThinkingBlock({ text }) {
 export default function Stage3({ finalResponse, streamState, streamMeta }) {
   const [showThinking, setShowThinking] = React.useState(false);
   const model = finalResponse?.model || 'chairman';
+  // Definition: "thinking" persists until the main output starts printing
+  // (i.e., any non-empty content in the main response area).
+  // Reasoning/thinking tokens do NOT count as having started the main output.
   const responseText = finalResponse?.response || streamState?.response || '';
   const thinkingText = finalResponse?.reasoning_details ?? streamState?.thinking ?? '';
 
   if (!responseText && !thinkingText) return null;
 
   const status = streamMeta?.status || (finalResponse ? 'complete' : 'running');
+  const hasStartedMainOutput = !!(responseText && responseText.length > 0);
+  const showThinkingIndicator = status === 'running' && !hasStartedMainOutput;
   const statusText =
-    status === 'running' ? 'Generating…' :
-    status === 'error' ? 'Error' :
-    'Complete';
-  const hasThinking = !!(thinkingText && thinkingText.length > 0);
+    status === 'error' ? '出错' :
+    status === 'complete' ? '已完成' :
+    (showThinkingIndicator ? '思考中' : '生成中');
 
   return (
     <StageCard
       title="Stage 3"
-      subtitle={`Final synthesis (Chairman: ${model.split('/')[1] || model}) · ${statusText}`}
+      subtitle={`最终综合（主席：${model.split('/')[1] || model}） · ${statusText}`}
       className="stage3"
       right={
         <div className="stage-actions">
@@ -62,15 +66,15 @@ export default function Stage3({ finalResponse, streamState, streamMeta }) {
             type="button"
             className="btn ghost"
             onClick={() => setShowThinking((v) => !v)}
-            title="Toggle thinking"
+            title="显示/隐藏思考过程"
           >
-            {showThinking ? 'Hide thinking' : 'Show thinking'}
+            {showThinking ? '隐藏思考' : '显示思考'}
           </button>
         </div>
       }
     >
       <div className="final-text markdown-content">
-        <ThinkingInline status={status} hasThinking={hasThinking} />
+        <ThinkingInline status={status} show={showThinkingIndicator} />
         <Markdown>{responseText}</Markdown>
       </div>
 

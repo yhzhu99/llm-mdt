@@ -36,7 +36,7 @@ export default function ChatInterface({
   conversation,
   onSendMessage,
   isLoading,
-  onNewConversation: _onNewConversation,
+  runtimeConfig,
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -107,6 +107,7 @@ export default function ChatInterface({
   }, [input]);
 
   const canSend = input.trim().length > 0 && !isLoading;
+  const councilOrder = runtimeConfig?.council_models || [];
 
   const isSingleTurnLocked = !!conversation?.messages?.some((m) => m?.role === 'user');
 
@@ -144,36 +145,7 @@ export default function ChatInterface({
     );
   }
 
-  // NOTE: These are computed per-assistant-message while rendering below.
-  // Using the "latest assistant" here caused earlier assistant messages'
-  // stage spinners to disappear incorrectly while a later assistant was streaming.
-  const assistantMessages = (conversation?.messages || []).filter((m) => m?.role === 'assistant');
-  const currentAssistant = assistantMessages[assistantMessages.length - 1];
-
-  const hasAnyStreamToken = (assistantMessage) => {
-    if (!assistantMessage?.stream) return false;
-
-    const stage1 = assistantMessage.stream?.stage1 || {};
-    for (const v of Object.values(stage1)) {
-      if ((v?.response && v.response.length > 0) || (v?.thinking && v.thinking.length > 0)) {
-        return true;
-      }
-    }
-
-    const stage2 = assistantMessage.stream?.stage2 || {};
-    for (const v of Object.values(stage2)) {
-      if ((v?.ranking && v.ranking.length > 0) || (v?.thinking && v.thinking.length > 0)) {
-        return true;
-      }
-    }
-
-    const stage3 = assistantMessage.stream?.stage3 || {};
-    if ((stage3?.response && stage3.response.length > 0) || (stage3?.thinking && stage3.thinking.length > 0)) {
-      return true;
-    }
-
-    return false;
-  };
+  // (Unused stream helper functions were removed.)
 
   return (
     <div className="chat-interface">
@@ -242,6 +214,7 @@ export default function ChatInterface({
                       responses={msg.stage1 || []}
                       streamState={msg.stream?.stage1}
                       streamMeta={msg.streamMeta?.stage1}
+                      councilOrder={councilOrder}
                     />
                   )}
 
@@ -263,6 +236,7 @@ export default function ChatInterface({
                       aggregateRankings={msg.metadata?.aggregate_rankings}
                       streamState={msg.stream?.stage2}
                       streamMeta={msg.streamMeta?.stage2}
+                      councilOrder={councilOrder}
                     />
                   )}
 

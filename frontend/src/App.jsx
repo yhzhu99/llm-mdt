@@ -587,6 +587,7 @@ function App() {
           onSendMessage={handleSendMessage}
           isLoading={isLoading}
           onNewConversation={handleNewConversation}
+          runtimeConfig={runtimeConfig}
         />
       </div>
     </div>

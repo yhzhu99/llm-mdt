@@ -4,9 +4,8 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage2.css';
 
-function ModelThinking({ status, hasThinking }) {
-  if (status !== 'running') return null;
-  if (!hasThinking) return null;
+function ModelThinking({ show }) {
+  if (!show) return null;
   return (
     <div className="stage-thinking-inline" aria-live="polite">
       <div className="spinner"></div>
@@ -52,17 +51,30 @@ function statusDot(status) {
   return <span className={cls} aria-hidden="true" />;
 }
 
-export default function Stage2({ rankings, labelToModel, aggregateRankings, streamState, streamMeta }) {
+function TabThinking({ show }) {
+  if (!show) return null;
+  return (
+    <span className="tab-thinking" aria-label="thinking">
+      <span className="spinner tab-spinner" aria-hidden="true"></span>
+      <span className="tab-thinking-text">思考中</span>
+    </span>
+  );
+}
+
+export default function Stage2({ rankings, labelToModel, aggregateRankings, streamState, streamMeta, councilOrder }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
 
   const tabs = useMemo(() => {
-    const preferred = Object.keys(streamMeta || {});
-    const set = new Set(preferred);
+    const preferred = Array.isArray(councilOrder) ? councilOrder.filter(Boolean) : [];
+    if (preferred.length > 0) return preferred;
+
+    const set = new Set();
     for (const r of rankings || []) if (r?.model) set.add(r.model);
     for (const m of Object.keys(streamState || {})) if (m) set.add(m);
-    return preferred.length > 0 ? [...preferred, ...[...set].filter((m) => !preferred.includes(m))] : [...set];
-  }, [rankings, streamState, streamMeta]);
+    for (const m of Object.keys(streamMeta || {})) if (m) set.add(m);
+    return [...set];
+  }, [rankings, streamState, streamMeta, councilOrder]);
 
   if (tabs.length === 0) {
     return null;
@@ -76,8 +88,14 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
   const thinkingText =
     activeRanking?.reasoning_details ?? streamForActive?.thinking ?? '';
   const displayThinking = deAnonymizeText(thinkingText, labelToModel);
-  const hasThinking = !!(thinkingText && thinkingText.length > 0);
-  const activeStatus = streamMeta?.[activeModel]?.status || (activeRanking ? 'complete' : 'idle');
+  const _activeStatus = streamMeta?.[activeModel]?.status || (activeRanking ? 'complete' : 'idle');
+
+  const hasStartedMainOutput = (model) => {
+    const fromFinal = (rankings || []).find((r) => r?.model === model)?.ranking;
+    const fromStream = streamState?.[model]?.ranking;
+    return !!((fromFinal && String(fromFinal).length > 0) || (fromStream && String(fromStream).length > 0));
+  };
+  const isThinking = (model) => (streamMeta?.[model]?.status === 'running') && !hasStartedMainOutput(model);
 
   return (
     <StageCard
@@ -93,6 +111,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
           >
             {statusDot(streamMeta?.[model]?.status)}
             {model.split('/')[1] || model}
+            <TabThinking show={isThinking(model)} />
           </button>
         ))}
       </div>
@@ -119,7 +138,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
           </div>
         </div>
         <div className="ranking-content markdown-content">
-          <ModelThinking status={activeStatus} hasThinking={hasThinking} />
+          <ModelThinking show={isThinking(activeModel)} />
           <Markdown>
             {displayText}
           </Markdown>
