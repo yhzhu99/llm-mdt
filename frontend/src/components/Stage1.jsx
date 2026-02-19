@@ -31,11 +31,14 @@ export default function Stage1({ responses }) {
       <div className="stage-panel">
         <div className="stage-panel-head">
           <div className="stage-panel-label">{responses[activeTab].model}</div>
-          <CopyButton
-            label="Copy"
-            successLabel="Copied"
-            getText={() => responses[activeTab].response || ''}
-          />
+          <div className="stage-actions">
+            <CopyButton
+              iconOnly
+              label="Copy"
+              successLabel="Copied"
+              getText={() => responses[activeTab].response || ''}
+            />
+          </div>
         </div>
         <div className="response-text markdown-content">
           <Markdown>{responses[activeTab].response}</Markdown>

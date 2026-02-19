@@ -77,9 +77,21 @@
   margin-bottom: 10px;
 }
 
+.stage-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.75;
+  transition: opacity 0.12s ease;
+}
+
+.stage-card:hover .stage-actions,
+.stage-panel:hover .stage-actions {
+  opacity: 1;
+}
+
 .stage-panel-label {
   font-size: 12px;
   color: rgba(15, 23, 42, 0.55);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
 }
-

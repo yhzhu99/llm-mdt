@@ -14,11 +14,14 @@ export default function Stage3({ finalResponse }) {
       subtitle={`Final synthesis (Chairman: ${finalResponse.model.split('/')[1] || finalResponse.model})`}
       className="stage3"
       right={
-        <CopyButton
-          label="Copy"
-          successLabel="Copied"
-          getText={() => finalResponse.response || ''}
-        />
+        <div className="stage-actions">
+          <CopyButton
+            iconOnly
+            label="Copy"
+            successLabel="Copied"
+            getText={() => finalResponse.response || ''}
+          />
+        </div>
       }
     >
       <div className="final-text markdown-content">

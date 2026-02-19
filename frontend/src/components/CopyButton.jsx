@@ -25,6 +25,7 @@ export default function CopyButton({
   successLabel = 'Copied',
   className = '',
   title,
+  iconOnly = false,
 }) {
   const [status, setStatus] = useState('idle'); // idle | success | error
 
@@ -42,16 +43,19 @@ export default function CopyButton({
   };
 
   const display = status === 'success' ? successLabel : label;
+  const visibleText = iconOnly ? (status === 'success' ? 'Copied' : '') : display;
 
   return (
     <button
       type="button"
-      className={`copy-button ${className}`.trim()}
+      className={`copy-button ${iconOnly ? 'icon-only' : ''} ${className}`.trim()}
       onClick={onCopy}
       title={title || label}
     >
-      {display}
+      <span className="copy-button__icon" aria-hidden="true">
+        ⧉
+      </span>
+      {visibleText ? <span className="copy-button__text">{visibleText}</span> : null}
     </button>
   );
 }
-

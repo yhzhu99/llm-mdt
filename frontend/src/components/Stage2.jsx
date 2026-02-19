@@ -47,12 +47,15 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
       <div className="stage-panel">
         <div className="stage-panel-head">
           <div className="stage-panel-label">{activeRanking.model}</div>
-          <CopyButton
-            label="Copy"
-            successLabel="Copied"
-            getText={() => rawText}
-            title="Copy raw evaluation (anonymous labels)"
-          />
+          <div className="stage-actions">
+            <CopyButton
+              iconOnly
+              label="Copy"
+              successLabel="Copied"
+              getText={() => rawText}
+              title="Copy raw evaluation (anonymous labels)"
+            />
+          </div>
         </div>
         <div className="ranking-content markdown-content">
           <Markdown>
@@ -81,12 +84,15 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings }) {
         <div className="aggregate-card">
           <div className="aggregate-card-head">
             <div className="aggregate-card-title">Aggregate Rankings</div>
-            <CopyButton
-              label="Copy"
-              successLabel="Copied"
-              getText={() => JSON.stringify(aggregateRankings, null, 2)}
-              title="Copy aggregate rankings (JSON)"
-            />
+            <div className="stage-actions">
+              <CopyButton
+                iconOnly
+                label="Copy"
+                successLabel="Copied"
+                getText={() => JSON.stringify(aggregateRankings, null, 2)}
+                title="Copy aggregate rankings (JSON)"
+              />
+            </div>
           </div>
           <div className="aggregate-list">
             {aggregateRankings.map((agg, index) => (

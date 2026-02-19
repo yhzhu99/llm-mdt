@@ -24,12 +24,13 @@ export default function TraceLog({ assistantMessage }) {
       <div className="trace-log__header">
         <button
           type="button"
-          className="trace-log__toggle"
+          className="trace-log__toggle btn ghost"
           onClick={() => setOpen((v) => !v)}
         >
-          {open ? 'Hide trace log' : 'Show trace log'}
+          {open ? 'Hide trace' : 'Show trace'}
         </button>
         <CopyButton
+          iconOnly
           label="Copy log"
           successLabel="Copied"
           getText={() => text}
@@ -45,4 +46,3 @@ export default function TraceLog({ assistantMessage }) {
     </div>
   );
 }
-
