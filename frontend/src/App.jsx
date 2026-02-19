@@ -36,6 +36,7 @@ function App() {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isRefreshingAfterStream, setIsRefreshingAfterStream] = useState(false);
   // Draft conversation: created when user lands on main panel and starts typing.
   // It is NOT added to the sidebar until the first message is actually sent.
   const [draftConversationId, setDraftConversationId] = useState(null);
@@ -110,10 +111,13 @@ function App() {
 
   // Load conversation details when selected
   useEffect(() => {
-    if (currentConversationId) {
+    // Important: avoid reloading from disk while streaming.
+    // Reloading replaces `currentConversation` (and wipes `stream/*` state),
+    // causing all subsequent stream updates to become no-ops.
+    if (currentConversationId && !isLoading && !isRefreshingAfterStream) {
       loadConversation(currentConversationId);
     }
-  }, [currentConversationId]);
+  }, [currentConversationId, isLoading, isRefreshingAfterStream]);
 
   const handleNewConversation = () => {
     setCurrentConversationId(null);
@@ -176,6 +180,7 @@ function App() {
     }
 
     setIsLoading(true);
+    setIsRefreshingAfterStream(false);
     try {
       // Ensure we have a local conversation object for optimistic UI.
       setCurrentConversation((prev) => {
@@ -278,6 +283,7 @@ function App() {
       };
 
       // Send message with streaming
+      let receivedCompleteEvent = false;
       await api.sendMessageStream(
         conversationIdForRequest,
         { content },
@@ -487,12 +493,11 @@ function App() {
             break;
 
           case 'complete':
-            // Stream complete, reload conversations list and refresh current conversation.
+            // Stream complete: refresh sidebar list; conversation reload is handled
+            // by the post-stream refresh below (single canonical reload).
+            receivedCompleteEvent = true;
             (async () => {
               await loadConversations();
-              if (conversationIdForRequest === currentConversationId) {
-                await loadConversation(conversationIdForRequest);
-              }
               setIsLoading(false);
             })();
             break;
@@ -508,16 +513,17 @@ function App() {
       });
 
       // Best-effort final refresh: covers cases where stream ends without `complete`
-      // (e.g. network interruption or parsing edge cases).
+      // (e.g. network interruption or parsing edge cases). Also ensures we end up
+      // with canonical server state (assistant message without client-only stream fields).
+      setIsRefreshingAfterStream(true);
       await loadConversations();
-      if (conversationIdForRequest === currentConversationId) {
-        await loadConversation(conversationIdForRequest);
-      }
+      await loadConversation(conversationIdForRequest);
+      setIsRefreshingAfterStream(false);
 
       // If this message was sent in a draft conversation, it now has content
       // and should appear in the sidebar.
       setDraftConversationId((prev) => (prev === conversationIdForRequest ? null : prev));
-      setIsLoading(false);
+      if (!receivedCompleteEvent) setIsLoading(false);
     } catch (error) {
       console.error('Failed to send message:', error);
       // Remove optimistic messages on error
@@ -526,6 +532,7 @@ function App() {
         messages: prev.messages.slice(0, -2),
       }));
       setIsLoading(false);
+      setIsRefreshingAfterStream(false);
     }
   };
 
