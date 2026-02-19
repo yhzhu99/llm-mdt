@@ -99,18 +99,20 @@ export default function ChatInterface({
             <div key={index} className="message-group">
               {msg.role === 'user' ? (
                 <div className="user-message message-bubble">
-                  <div className="message-label">
-                    <span>You</span>
-                    <CopyButton
-                      iconOnly
-                      label="Copy message"
-                      successLabel="Copied"
-                      getText={() => msg.content || ''}
-                    />
-                  </div>
-                  <div className="message-content">
-                    <div className="markdown-content">
-                      <Markdown>{msg.content}</Markdown>
+                  <div className="user-card">
+                    <div className="user-card-head">
+                      <div className="user-title">You</div>
+                      <CopyButton
+                        iconOnly
+                        label="Copy message"
+                        successLabel="Copied"
+                        getText={() => msg.content || ''}
+                      />
+                    </div>
+                    <div className="user-card-body">
+                      <div className="markdown-content">
+                        <Markdown>{msg.content}</Markdown>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -201,6 +203,14 @@ export default function ChatInterface({
         >
           Send
         </button>
+        <div className="input-hint">
+          <div className="hint-line">
+            <span className="kbd">Enter</span> send
+            <span className="hint-sep">·</span>
+            <span className="kbd">Shift</span>+<span className="kbd">Enter</span> newline
+          </div>
+          {isLoading ? <div className="hint-sub">Generating…</div> : null}
+        </div>
       </form>
     </div>
   );
