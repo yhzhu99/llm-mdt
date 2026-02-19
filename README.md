@@ -51,6 +51,17 @@ OPENROUTER_API_KEY=sk-or-v1-...
 
 Get your API key at [openrouter.ai](https://openrouter.ai/). Make sure to purchase the credits you need, or sign up for automatic top up.
 
+### 2.1 Configure API Base URL (OpenRouter / ZenMax)
+
+This project uses an **OpenAI-compatible** Chat Completions endpoint. By default you can use **OpenRouter** directly, or route requests via **ZenMax** (as an API relay).
+
+- OpenRouter base URL (recommended default):
+  - `https://openrouter.ai/api/v1/chat/completions`
+- ZenMax base URL (relay):
+  - `https://zenmux.ai/api/v1/chat/completions`
+
+If your deployment supports it, set the base URL via environment variable or update `backend/config.py` (`OPENROUTER_API_URL`) to point to the endpoint you want.
+
 ### 3. Configure Models (Optional)
 
 Edit `backend/config.py` to customize the council:
