@@ -36,6 +36,11 @@ export default function ChatInterface({
     if (input.trim() && !isLoading) {
       onSendMessage(input);
       setInput('');
+      // Keep typing flow: re-focus and reset height after send.
+      window.setTimeout(() => {
+        inputRef.current?.focus?.();
+        autosizeTextarea();
+      }, 0);
     }
   };
 
@@ -217,6 +222,7 @@ export default function ChatInterface({
           className="send-button"
           disabled={!input.trim() || isLoading}
         >
+          <span className="send-icon" aria-hidden="true">➤</span>
           Send
         </button>
         <div className="input-hint">

@@ -319,6 +319,12 @@
   align-self: flex-end;
 }
 
+.send-button .send-icon {
+  display: inline-block;
+  margin-right: 6px;
+  font-weight: 900;
+}
+
 .send-button:hover:not(:disabled) {
   background: var(--primary-2);
   border-color: var(--primary-2);
