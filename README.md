@@ -1,12 +1,26 @@
-# LLM MDT
+# llm-mdt
 
-The idea of this repo is that instead of asking a question to your favorite LLM provider (e.g. OpenAI GPT 5.2, Google Gemini 3.0 Pro, etc.), you can group them into your "LLM MDT". This repo is a simple, local web app that essentially looks like ChatGPT except it uses OpenRouter to send your query to multiple LLMs, it then asks them to review and rank each other's work, and finally a Chairman LLM produces the final response.
+`llm-mdt` is a lightweight local web app that treats multiple large language models as a **multidisciplinary team (MDT)**: models first answer independently, then **anonymously** peer-review and rank each other, and finally a designated **Chairman** model synthesizes a single best-possible response.
 
-In a bit more detail, here is what happens when you submit a query:
+At a high level, the pipeline is:
 
-1. **Stage 1: First opinions**. The user query is given to all LLMs individually, and the responses are collected. The individual responses are shown in a "tab view", so that the user can inspect them all one by one.
-2. **Stage 2: Review**. Each individual LLM is given the responses of the other LLMs. Under the hood, the LLM identities are anonymized so that the LLM can't play favorites when judging their outputs. The LLM is asked to rank them in accuracy and insight.
-3. **Stage 3: Final response**. The designated Chairman of the LLM Council takes all of the model's responses and compiles them into a single final answer that is presented to the user.
+1. **Stage 1 — First opinions.** Query all council models in parallel and display each response in a tab view.
+2. **Stage 2 — Anonymous peer review.** Re-label responses as *Response A/B/C...* so reviewers cannot play favorites; collect critiques and rankings in a strict, parseable format.
+3. **Stage 3 — Final synthesis.** A Chairman model produces the final answer using the Stage 1 responses plus Stage 2 evaluations.
+
+## Background
+
+The core idea—LLM-driven multi-agent collaboration for “team-style” reasoning—was explored earlier in our work **ColaCare** (published at **WWW 2025**):
+
+- Paper: *ColaCare: Enhancing Electronic Health Record Modeling through Large Language Model-Driven Multi-Agent Collaboration*
+- arXiv: `https://arxiv.org/abs/2410.02551`
+
+## Features
+
+- **Local, ChatGPT-like UI** with transparent inspection of all intermediate outputs
+- **Anonymized peer review** in Stage 2 to reduce identity bias
+- **Graceful degradation:** continues even if some model calls fail
+- **JSON conversation storage** in `data/conversations/`
 
 ## Setup
 
@@ -80,3 +94,9 @@ Then open http://localhost:5173 in your browser.
 - **Frontend:** React + Vite, react-markdown for rendering
 - **Storage:** JSON files in `data/conversations/`
 - **Package Management:** uv for Python, npm for JavaScript
+
+## Acknowledgements
+
+This project is based on and adapted from Andrej Karpathy's open-source project `llm-council`:
+
+- `https://github.com/karpathy/llm-council`
