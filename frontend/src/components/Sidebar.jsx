@@ -36,7 +36,7 @@ export default function Sidebar({
             if (e.key === 'Enter' || e.key === ' ') onNewConversation?.();
           }}
         >
-          <div className="brand-icon">C</div>
+          <div className="brand-icon" aria-hidden="true" />
           {!isCollapsed && <div className="brand-name">LLM MDT</div>}
         </div>
 

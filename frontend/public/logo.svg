@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="LLM MDT">
+  <defs>
+    <linearGradient id="g" x1="14" y1="12" x2="50" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4a90e2" />
+      <stop offset="1" stop-color="#2f6fb9" />
+    </linearGradient>
+  </defs>
+  <rect x="8" y="8" width="48" height="48" rx="14" fill="url(#g)" />
+  <path
+    d="M24 26h16M24 32h16M24 38h10"
+    fill="none"
+    stroke="#ffffff"
+    stroke-width="4"
+    stroke-linecap="round"
+    opacity="0.96"
+  />
+</svg>
+

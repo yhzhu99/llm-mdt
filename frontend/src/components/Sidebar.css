@@ -86,13 +86,17 @@
   width: 34px;
   height: 34px;
   border-radius: 10px;
-  background: var(--primary);
-  color: white;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-weight: 800;
   box-shadow: 0 10px 18px rgba(74, 144, 226, 0.18);
+  border: 1px solid rgba(74, 144, 226, 0.22);
+  background-image: url('/logo.svg');
+  background-size: 82% 82%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .brand-name {
