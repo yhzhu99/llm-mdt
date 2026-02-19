@@ -1,8 +1,19 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage2.css';
+
+function ModelThinking({ status, hasText }) {
+  if (status !== 'running') return null;
+  if (hasText) return null;
+  return (
+    <div className="stage-thinking-inline" aria-live="polite">
+      <div className="spinner"></div>
+      <span>思考中…</span>
+    </div>
+  );
+}
 
 function deAnonymizeText(text, labelToModel) {
   if (!labelToModel) return text;
@@ -44,6 +55,7 @@ function statusDot(status) {
 export default function Stage2({ rankings, labelToModel, aggregateRankings, streamState, streamMeta }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
+  const lastModelRef = useRef(null);
 
   const modelsFromStream = streamState ? Object.keys(streamState) : [];
   const tabs = (rankings || []).map((r) => r?.model).filter(Boolean);
@@ -55,6 +67,11 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
     return null;
   }
 
+  if (lastModelRef.current !== tabs[tabs.length - 1]) {
+    lastModelRef.current = tabs[tabs.length - 1];
+    if (activeTab !== 0) setActiveTab(0);
+  }
+
   const activeModel = tabs[Math.min(activeTab, tabs.length - 1)];
   const activeRanking = (rankings || []).find((r) => r?.model === activeModel) || { model: activeModel, ranking: '', parsed_ranking: [] };
   const streamForActive = (streamState && activeModel && streamState[activeModel]) || null;
@@ -63,6 +80,8 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
   const thinkingText =
     activeRanking?.reasoning_details ?? streamForActive?.thinking ?? '';
   const displayThinking = deAnonymizeText(thinkingText, labelToModel);
+  const hasAnyText = (rawText && rawText.length > 0) || (thinkingText && thinkingText.length > 0);
+  const activeStatus = streamMeta?.[activeModel]?.status || (activeRanking ? 'complete' : 'idle');
 
   return (
     <StageCard
@@ -104,6 +123,7 @@ export default function Stage2({ rankings, labelToModel, aggregateRankings, stre
           </div>
         </div>
         <div className="ranking-content markdown-content">
+          <ModelThinking status={activeStatus} hasText={hasAnyText} />
           <Markdown>
             {displayText}
           </Markdown>

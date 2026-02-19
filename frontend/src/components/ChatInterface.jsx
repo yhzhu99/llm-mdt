@@ -4,7 +4,6 @@ import Stage2 from './Stage2';
 import Stage3 from './Stage3';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
-import TraceLog from './TraceLog';
 import './ChatInterface.css';
 
 const IconArrowUp = ({ size = 18 }) => (
@@ -151,6 +150,31 @@ export default function ChatInterface({
   const assistantMessages = (conversation?.messages || []).filter((m) => m?.role === 'assistant');
   const currentAssistant = assistantMessages[assistantMessages.length - 1];
 
+  const hasAnyStreamToken = (assistantMessage) => {
+    if (!assistantMessage?.stream) return false;
+
+    const stage1 = assistantMessage.stream?.stage1 || {};
+    for (const v of Object.values(stage1)) {
+      if ((v?.response && v.response.length > 0) || (v?.thinking && v.thinking.length > 0)) {
+        return true;
+      }
+    }
+
+    const stage2 = assistantMessage.stream?.stage2 || {};
+    for (const v of Object.values(stage2)) {
+      if ((v?.ranking && v.ranking.length > 0) || (v?.thinking && v.thinking.length > 0)) {
+        return true;
+      }
+    }
+
+    const stage3 = assistantMessage.stream?.stage3 || {};
+    if ((stage3?.response && stage3.response.length > 0) || (stage3?.thinking && stage3.thinking.length > 0)) {
+      return true;
+    }
+
+    return false;
+  };
+
   return (
     <div className="chat-interface">
       <div className="messages-container">
@@ -257,7 +281,6 @@ export default function ChatInterface({
                     <Stage3 finalResponse={msg.stage3} streamState={msg.stream?.stage3} streamMeta={msg.streamMeta?.stage3} />
                   )}
 
-                  <TraceLog assistantMessage={msg} />
                       </>
                     );
                   })()}
@@ -266,17 +289,6 @@ export default function ChatInterface({
               )}
             </div>
           ))
-        )}
-
-        {isLoading &&
-          // Avoid double spinners: if any stage-specific spinner is already shown
-          // in the most recent assistant message, hide the global "Consulting..."
-          // indicator.
-          !(currentAssistant?.loading?.stage1 || currentAssistant?.loading?.stage2 || currentAssistant?.loading?.stage3) && (
-          <div className="loading-indicator">
-            <div className="spinner"></div>
-            <span>Consulting the council...</span>
-          </div>
         )}
 
         <div ref={messagesEndRef} />

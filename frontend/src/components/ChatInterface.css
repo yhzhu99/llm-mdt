@@ -251,6 +251,25 @@
   animation: spin 0.8s linear infinite;
 }
 
+.stage-thinking-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(15, 23, 42, 0.65);
+  font-size: 13px;
+  font-style: italic;
+  padding: 8px 10px;
+  background: rgba(15, 23, 42, 0.03);
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-bottom: 10px;
+}
+
+.stage-thinking-inline .spinner {
+  width: 16px;
+  height: 16px;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

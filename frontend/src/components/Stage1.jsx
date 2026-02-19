@@ -1,8 +1,19 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage1.css';
+
+function ModelThinking({ status, hasText }) {
+  if (status !== 'running') return null;
+  if (hasText) return null;
+  return (
+    <div className="stage-thinking-inline" aria-live="polite">
+      <div className="spinner"></div>
+      <span>思考中…</span>
+    </div>
+  );
+}
 
 function ThinkingBlock({ text }) {
   if (!text || String(text).trim().length === 0) {
@@ -32,6 +43,7 @@ function statusDot(status) {
 export default function Stage1({ responses, streamState, streamMeta }) {
   const [activeTab, setActiveTab] = useState(0);
   const [showThinking, setShowThinking] = useState(false);
+  const lastModelRef = useRef(null);
 
   const modelsFromStream = streamState ? Object.keys(streamState) : [];
   const tabs = (responses || []).map((r) => r?.model).filter(Boolean);
@@ -43,6 +55,13 @@ export default function Stage1({ responses, streamState, streamMeta }) {
     return null;
   }
 
+  // When new tabs appear (streaming) or ordering changes, reset to the newest model.
+  // This avoids "tab index reuse" bugs where switching tabs looks like content is "crossed".
+  if (lastModelRef.current !== tabs[tabs.length - 1]) {
+    lastModelRef.current = tabs[tabs.length - 1];
+    if (activeTab !== 0) setActiveTab(0);
+  }
+
   const activeModel = tabs[Math.min(activeTab, tabs.length - 1)];
   const active = (responses || []).find((r) => r?.model === activeModel) || { model: activeModel, response: '' };
   const streamForActive = (streamState && activeModel && streamState[activeModel]) || null;
@@ -52,6 +71,8 @@ export default function Stage1({ responses, streamState, streamMeta }) {
     (active?.response && String(active.response)) ||
     streamForActive?.response ||
     '';
+  const hasAnyText = (responseText && responseText.length > 0) || (thinkingText && thinkingText.length > 0);
+  const activeStatus = streamMeta?.[activeModel]?.status || (active ? 'complete' : 'idle');
 
   return (
     <StageCard
@@ -92,6 +113,7 @@ export default function Stage1({ responses, streamState, streamMeta }) {
           </div>
         </div>
         <div className="response-text markdown-content">
+          <ModelThinking status={activeStatus} hasText={hasAnyText} />
           <Markdown>{responseText}</Markdown>
         </div>
 

@@ -4,6 +4,17 @@ import CopyButton from './CopyButton';
 import StageCard from './StageCard';
 import './Stage3.css';
 
+function ThinkingInline({ status, hasText }) {
+  if (status !== 'running') return null;
+  if (hasText) return null;
+  return (
+    <div className="stage-thinking-inline" aria-live="polite">
+      <div className="spinner"></div>
+      <span>思考中…</span>
+    </div>
+  );
+}
+
 function ThinkingBlock({ text }) {
   if (!text || String(text).trim().length === 0) {
     return (
@@ -32,6 +43,7 @@ export default function Stage3({ finalResponse, streamState, streamMeta }) {
     status === 'running' ? 'Generating…' :
     status === 'error' ? 'Error' :
     'Complete';
+  const hasAnyText = (responseText && responseText.length > 0) || (thinkingText && thinkingText.length > 0);
 
   return (
     <StageCard
@@ -58,6 +70,7 @@ export default function Stage3({ finalResponse, streamState, streamMeta }) {
       }
     >
       <div className="final-text markdown-content">
+        <ThinkingInline status={status} hasText={hasAnyText} />
         <Markdown>{responseText}</Markdown>
       </div>
 
