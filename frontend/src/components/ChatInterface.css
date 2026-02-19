@@ -88,7 +88,7 @@
   border: 1px solid rgba(74, 144, 226, 0.22);
   background: rgba(74, 144, 226, 0.10);
   box-shadow: var(--shadow-sm);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .user-card-head {
