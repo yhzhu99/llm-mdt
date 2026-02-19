@@ -12,6 +12,7 @@ OPENROUTER_API_KEY = os.getenv("ZENMUX_API_KEY")
 COUNCIL_MODELS = [
     "openai/gpt-5.2",
     "google/gemini-3-pro-preview",
+    "deepseek/deepseek-reasoner",
     # "anthropic/claude-opus-4.6"
 ]
 
