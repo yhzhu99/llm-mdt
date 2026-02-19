@@ -40,7 +40,7 @@ export default function Sidebar({
 
         <button
           type="button"
-          className="sidebar-toggle"
+          className="sidebar-toggle btn ghost"
           onClick={onToggleCollapsed}
           title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
@@ -129,7 +129,7 @@ function ConversationRow({ conv, active, collapsed, onSelect, onDelete, onRename
             )}
             <button
               type="button"
-              className="conversation-more"
+              className="conversation-more btn ghost"
               onClick={(e) => {
                 e.stopPropagation();
                 setOpen((v) => !v);
@@ -156,7 +156,7 @@ function ConversationRow({ conv, active, collapsed, onSelect, onDelete, onRename
               >
                 <button
                   type="button"
-                  className="dropdown-item"
+                  className="dropdown-item btn ghost"
                   onClick={() => {
                     setOpen(false);
                     setRenaming(true);
@@ -167,7 +167,7 @@ function ConversationRow({ conv, active, collapsed, onSelect, onDelete, onRename
                 </button>
                 <button
                   type="button"
-                  className="dropdown-item danger"
+                  className="dropdown-item btn ghost danger"
                   onClick={() => {
                     setOpen(false);
                     onDelete?.();
