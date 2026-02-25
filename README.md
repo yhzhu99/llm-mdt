@@ -112,4 +112,3 @@ This codebase structure is inspired by Andrej Karpathy's excellent [llm-council]
 <div align="center">
   <i>If you find this project useful, please consider giving it a ⭐ to help others discover it!</i>
 </div>
-```
