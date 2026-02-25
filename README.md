@@ -1,32 +1,45 @@
-# llm-mdt
+<div align="center">
+  <img src="frontend/public/banner.svg" alt="LLM MDT Banner" width="100%" />
 
-`llm-mdt` is a lightweight local web app that treats multiple large language models as a **multidisciplinary team (MDT)**: models first answer independently, then **anonymously** peer-review and rank each other, and finally a designated **Chairman** model synthesizes a single best-possible response.
+  <h1>LLM MDT (Multi-Disciplinary Team)</h1>
 
-At a high level, the pipeline is:
+  <p><b>A local web app that treats LLMs as a medical-style Multidisciplinary Team.</b><br/>Models generate independently, review each other <i>anonymously</i>, and a Chairman synthesizes the perfect answer.</p>
 
-1. **Stage 1 — First opinions.** Query all council models in parallel and display each response in a tab view.
-2. **Stage 2 — Anonymous peer review.** Re-label responses as *Response A/B/C...* so reviewers cannot play favorites; collect critiques and rankings in a strict, parseable format.
-3. **Stage 3 — Final synthesis.** A Chairman model produces the final answer using the Stage 1 responses plus Stage 2 evaluations.
+  <p>
+    <a href="https://github.com/yhzhu99/llm-mdt/stargazers"><img src="https://img.shields.io/github/stars/yhzhu99/llm-mdt?style=flat-square&color=blue" alt="Stars"></a>
+    <a href="https://github.com/yhzhu99/llm-mdt/network/members"><img src="https://img.shields.io/github/forks/yhzhu99/llm-mdt?style=flat-square&color=blue" alt="Forks"></a>
+    <img src="https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
+    <img src="https://img.shields.io/badge/React-Vite-61dafb?style=flat-square&logo=react&logoColor=black" alt="React">
+  </p>
+</div>
 
-## Background
+---
 
-The core idea—LLM-driven multi-agent collaboration for “team-style” reasoning—was explored earlier in our work **ColaCare** (published at **WWW 2025**):
+## 💡 The Core Problem It Solves
 
-- Paper: *ColaCare: Enhancing Electronic Health Record Modeling through Large Language Model-Driven Multi-Agent Collaboration*
-- arXiv: `https://arxiv.org/abs/2410.02551`
+If you ask GPT-4, Claude, and Gemini to rate each other's answers, **they are heavily biased toward their own outputs or specific model names**.
 
-## Features
+`llm-mdt` solves this by introducing **Anonymized Peer Review**.
 
-- **Local, ChatGPT-like UI** with transparent inspection of all intermediate outputs
-- **Anonymized peer review** in Stage 2 to reduce identity bias
-- **Graceful degradation:** continues even if some model calls fail
-- **JSON conversation storage** in `data/conversations/`
+Based on our research paper [**ColaCare** (WWW 2025) 📄](https://arxiv.org/abs/2410.02551), this project implements a 3-stage deliberation pipeline that extracts the absolute best reasoning from multiple models without identity bias.
 
-## Setup
+<div align="center">
+  <img src="frontend/public/architecture.svg" alt="LLM MDT Architecture" width="90%" />
+</div>
+
+## ✨ Features
+
+- 🎭 **Anonymized Peer Review:** Responses are relabeled as *Response A, B, C* during Stage 2. Reviewers vote based on pure logic, not brand bias.
+- ⚡ **Local, ChatGPT-like UI:** A beautiful, responsive React frontend with streaming support.
+- 🔍 **Total Transparency:** Inspect raw outputs, reasoning (thinking) processes, and parsed rankings via a clean Tab interface.
+- 🛡️ **Graceful Degradation:** The council continues deliberation even if one API endpoint fails or times out.
+- 💾 **Local Storage:** Conversations are saved cleanly in local JSON files.
+
+## 🚀 Setup & Installation
 
 ### 1. Install Dependencies
 
-The project uses [uv](https://docs.astral.sh/uv/) for project management.
+We use [`uv`](https://docs.astral.sh/uv/) for blazing-fast Python environment management.
 
 **Backend:**
 ```bash
@@ -41,7 +54,7 @@ npm install
 cd ..
 ```
 
-### 2. Configure API Base URL (OpenRouter / ZenMax)
+### 2. Configure API Keys
 
 This project uses an **OpenAI-compatible** Chat Completions endpoint. By default you can use **OpenRouter** directly, or route requests via **ZenMax** (as an API relay).
 
@@ -52,59 +65,51 @@ This project uses an **OpenAI-compatible** Chat Completions endpoint. By default
 
 If your deployment supports it, set the base URL via environment variable or update `backend/config.py` (`OPENROUTER_API_URL`) to point to the endpoint you want.
 
-### 3. Configure API Key
-
 Create a `.env` file in the project root:
 
-```bash
+```env
 OPENROUTER_API_KEY=sk-or-v1-...
 ```
 
-Get your API key at [openrouter.ai](https://openrouter.ai/) or [https://zenmux.ai](https://zenmux.ai/). Make sure to purchase the credits you need.
+*(By default, the project uses ZenMax / OpenRouter. Get your keys at [openrouter.ai](https://openrouter.ai/) or [zenmux.ai](https://zenmux.ai/).)*
 
-### 4. Configure Models (Optional)
+### 3. Customize Your Council (Optional)
 
-Edit `backend/config.py` to customize the council:
+Edit `backend/config.py` to change the models in your council or appoint a different Chairman:
 
 ```python
 COUNCIL_MODELS = [
     "openai/gpt-5.2",
     "google/gemini-3-pro-preview",
-    "anthropic/claude-sonnet-4.6",
+    "deepseek/deepseek-reasoner",
 ]
-
 CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
 ```
 
-## Running the Application
+## 🎮 Running the App
 
-**Option 1: Use the start script**
+The easiest way to start both the backend and frontend is using the included script:
+
 ```bash
 ./start.sh
 ```
 
-**Option 2: Run manually**
+Alternatively, run them manually in separate terminals:
+- **Backend:** `uv run python -m backend.main`
+- **Frontend:** `cd frontend && npm run dev`
 
-Terminal 1 (Backend):
-```bash
-uv run python -m backend.main
+Open [http://localhost:5173](http://localhost:5173) in your browser to start your MDT session!
+
+## 📚 Background & Acknowledgements
+
+The core idea—LLM-driven multi-agent collaboration for “team-style” reasoning—was explored in our published work:
+- 📖 **Paper:** *ColaCare: Enhancing Electronic Health Record Modeling through Large Language Model-Driven Multi-Agent Collaboration* (**WWW 2025**)
+- 🔗 **arXiv:** [https://arxiv.org/abs/2410.02551](https://arxiv.org/abs/2410.02551)
+
+This codebase structure is inspired by Andrej Karpathy's excellent [llm-council](https://github.com/karpathy/llm-council) prototype, significantly expanded with a modern UI, streaming, anonymization, and persistent storage.
+
+---
+<div align="center">
+  <i>If you find this project useful, please consider giving it a ⭐ to help others discover it!</i>
+</div>
 ```
-
-Terminal 2 (Frontend):
-```bash
-cd frontend
-npm run dev
-```
-
-Then open http://localhost:5173 in your browser.
-
-## Tech Stack
-
-- **Backend:** FastAPI (Python 3.10+), async httpx, OpenRouter API
-- **Frontend:** React + Vite, react-markdown for rendering
-- **Storage:** JSON files in `data/conversations/`
-- **Package Management:** uv for Python, npm for JavaScript
-
-## Acknowledgements
-
-This project is based on and adapted from Andrej Karpathy's open-source project [llm-council](https://github.com/karpathy/llm-council)
