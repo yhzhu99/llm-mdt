@@ -95,6 +95,7 @@ const topBarTitle = computed(() => {
         :recovery-error="currentConversationRecoveryError"
         :provider-configured="providerConfigured"
         :runtime-config="runtimeConfig"
+        @new-conversation="newConversation"
         @open-settings="openSettings"
         @retry-recovery="retryConversationRecovery"
         @send="sendMessage"

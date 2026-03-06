@@ -32,6 +32,8 @@ The full MDT pipeline now runs in the frontend:
 
 Conversations and provider settings are stored locally in the browser using IndexedDB, so the app can be deployed as a static site on Cloudflare Pages.
 
+Each conversation is designed as a **single consultation**: one user prompt, followed by one staged MDT answer.
+
 ## Features
 
 - **Vue 3 + TypeScript + Tailwind UI** aligned with a modern MedX-style design system
@@ -39,7 +41,7 @@ Conversations and provider settings are stored locally in the browser using Inde
 - **Anonymized peer review** to reduce model-name bias
 - **Streaming stage updates** for Stage 1, Stage 2, and Stage 3
 - **Local persistence** for chats, rankings, and trace metadata
-- **Provider configuration in the browser** for base URL, API key, council models, chairman model, and optional headers
+- **Provider configuration in the browser** for base URL, API key, council models, chairman model, and an optional dedicated title model
 - **Cloudflare Pages friendly** static deployment
 
 ## Important Security Note
@@ -50,7 +52,6 @@ That means:
 
 - your API key is **not** sent to a project backend
 - your API key **is still accessible in the browser** to anyone with access to that device/session
-- your provider endpoint must allow **direct browser CORS requests**
 
 This is convenient, but it is **not a secure secret-management model for shared or public-trust deployments**.
 
@@ -79,13 +80,12 @@ Click **Settings** and enter:
 - your API key
 - one model per line for the council
 - the chairman model
-- optionally a separate title model
-- optionally extra headers such as `HTTP-Referer` or `X-Title`
+- optionally a separate conversation title model (for example `google/gemini-3.1-flash-lite-preview`)
 
 Example base URLs:
 
 - `https://openrouter.ai/api/v1/chat/completions`
-- any other browser-capable OpenAI-compatible endpoint you control
+- any other OpenAI-compatible endpoint you control
 
 ## Local Storage Model
 

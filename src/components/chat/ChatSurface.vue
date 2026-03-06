@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
-import { LoaderCircle, MessageSquareText, Settings2 } from 'lucide-vue-next'
+import { computed } from 'vue'
+import { LoaderCircle, MessageSquareText, Plus, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils'
+import Button from '@/components/ui/button/Button.vue'
 import ChatComposer from './ChatComposer.vue'
-import ConsultationOverview from './ConsultationOverview.vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
+import StageNavigation from './StageNavigation.vue'
 import StageOneCard from './StageOneCard.vue'
 import StageThreeCard from './StageThreeCard.vue'
 import StageTwoCard from './StageTwoCard.vue'
@@ -83,6 +84,9 @@ interface RuntimeConfigLike {
   council_models?: string[]
 }
 
+type StageKey = 'stage1' | 'stage2' | 'stage3'
+type StageStatus = 'waiting' | 'running' | 'complete' | 'error'
+
 const props = withDefaults(
   defineProps<{
     conversation?: ConversationDetail | null
@@ -109,13 +113,12 @@ const props = withDefaults(
 const emit = defineEmits<{
   (event: 'update:draft', value: string): void
   (event: 'send', value: string): void
+  (event: 'new-conversation'): void
   (event: 'open-settings'): void
   (event: 'retry-recovery'): void
 }>()
 
 const { t } = useI18n()
-const messagesContainer = ref<HTMLElement | null>(null)
-const messagesEnd = ref<HTMLElement | null>(null)
 
 const draftValue = computed({
   get: () => props.draft,
@@ -123,39 +126,8 @@ const draftValue = computed({
 })
 
 const councilOrder = computed(() => props.runtimeConfig?.council_models || [])
-
-const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-  messagesEnd.value?.scrollIntoView({ behavior, block: 'end' })
-}
-
-watch(
-  () => props.conversation,
-  async () => {
-    await nextTick()
-    const container = messagesContainer.value
-    if (!container) return
-    const distanceToBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight
-    if (distanceToBottom <= 160) {
-      scrollToBottom('smooth')
-    }
-  },
-  { deep: true },
-)
-
-watch(
-  () => props.isLoading,
-  async (isLoading) => {
-    if (!isLoading) return
-    await nextTick()
-    const container = messagesContainer.value
-    if (!container) return
-    const distanceToBottom =
-      container.scrollHeight - container.scrollTop - container.clientHeight
-    if (distanceToBottom <= 220) {
-      scrollToBottom('auto')
-    }
-  },
+const canComposeInConversation = computed(
+  () => !props.conversation || props.conversation.messages.length === 0,
 )
 
 const handleSend = (value: string) => emit('send', value)
@@ -164,12 +136,79 @@ const stageSectionId = (messageId: string | undefined, stage: 'stage1' | 'stage2
 
 const isAssistantStreaming = (message: AssistantMessage) =>
   Boolean(message.loading?.stage1 || message.loading?.stage2 || message.loading?.stage3)
+
+const stageStatusFromModelMeta = (
+  meta: Record<string, { status: 'idle' | 'running' | 'complete' | 'error'; message?: string }> | undefined,
+  loading: boolean,
+  hasCompleteContent: boolean,
+): StageStatus => {
+  const statuses = Object.values(meta || {})
+
+  if (loading || statuses.some((entry) => entry.status === 'running')) {
+    return 'running'
+  }
+
+  if (hasCompleteContent) {
+    return 'complete'
+  }
+
+  if (statuses.some((entry) => entry.status === 'error')) {
+    return 'error'
+  }
+
+  return 'waiting'
+}
+
+const hasStageSection = (message: AssistantMessage, stage: StageKey) => {
+  if (stage === 'stage1') {
+    return Boolean(message.loading?.stage1 || message.stage1?.length || Object.keys(message.stream?.stage1 || {}).length)
+  }
+
+  if (stage === 'stage2') {
+    return Boolean(message.loading?.stage2 || message.stage2?.length || Object.keys(message.stream?.stage2 || {}).length)
+  }
+
+  return Boolean(
+    message.loading?.stage3 ||
+      message.stage3 ||
+      message.stream?.stage3?.response ||
+      message.stream?.stage3?.thinking ||
+      message.streamMeta?.stage3?.status === 'error',
+  )
+}
+
+const stageAvailability = (message: AssistantMessage) => ({
+  stage1: hasStageSection(message, 'stage1'),
+  stage2: hasStageSection(message, 'stage2'),
+  stage3: hasStageSection(message, 'stage3'),
+})
+
+const stageStatuses = (message: AssistantMessage): Record<StageKey, StageStatus> => ({
+  stage1: stageStatusFromModelMeta(
+    message.streamMeta?.stage1,
+    Boolean(message.loading?.stage1),
+    Boolean(message.stage1?.length),
+  ),
+  stage2: stageStatusFromModelMeta(
+    message.streamMeta?.stage2,
+    Boolean(message.loading?.stage2),
+    Boolean(message.stage2?.length),
+  ),
+  stage3:
+    message.loading?.stage3 || message.streamMeta?.stage3?.status === 'running'
+      ? 'running'
+      : message.stage3 || message.streamMeta?.stage3?.status === 'complete'
+        ? 'complete'
+        : message.streamMeta?.stage3?.status === 'error'
+          ? 'error'
+          : 'waiting',
+})
 </script>
 
 <template>
   <section class="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_42%),linear-gradient(180deg,rgba(248,250,252,0.95),rgba(248,250,252,0.75))]">
     <div
-      ref="messagesContainer"
+      data-chat-scroll-root
       class="scrollbar-hide flex-1 overflow-y-auto px-5 py-6 sm:px-6"
     >
       <div
@@ -304,88 +343,100 @@ const isAssistantStreaming = (message: AssistantMessage) =>
             </div>
 
             <div class="space-y-4">
-              <ConsultationOverview
-                :stage1="(message as AssistantMessage).stage1"
-                :stage2="(message as AssistantMessage).stage2"
-                :stage3="(message as AssistantMessage).stage3"
-                :stream-meta="(message as AssistantMessage).streamMeta"
-                :loading="(message as AssistantMessage).loading"
-                :council-order="councilOrder"
+              <StageNavigation
                 :stage-ids="{
                   stage1: stageSectionId((message as AssistantMessage).id, 'stage1'),
                   stage2: stageSectionId((message as AssistantMessage).id, 'stage2'),
                   stage3: stageSectionId((message as AssistantMessage).id, 'stage3'),
                 }"
+                :stage-status="stageStatuses(message as AssistantMessage)"
+                :available-stages="stageAvailability(message as AssistantMessage)"
               />
 
-              <div
-                v-if="(message as AssistantMessage).loading?.stage1 && !Object.keys((message as AssistantMessage).stream?.stage1 || {}).length"
-                class="rounded-2xl border border-border/80 bg-muted/30 px-5 py-5"
-              >
-                <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <LoaderCircle :size="16" class="animate-spin" />
-                  {{ t('stage1Subtitle') }}
-                </div>
-              </div>
-
-              <StageOneCard
-                v-if="(message as AssistantMessage).stage1 || Object.keys((message as AssistantMessage).stream?.stage1 || {}).length"
+              <section
+                v-if="hasStageSection(message as AssistantMessage, 'stage1')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage1')"
-                :responses="(message as AssistantMessage).stage1 || []"
-                :stream-state="(message as AssistantMessage).stream?.stage1"
-                :stream-meta="(message as AssistantMessage).streamMeta?.stage1"
-                :council-order="councilOrder"
-              />
-
-              <div
-                v-if="(message as AssistantMessage).loading?.stage2 && !Object.keys((message as AssistantMessage).stream?.stage2 || {}).length"
-                class="rounded-2xl border border-border/80 bg-muted/30 px-5 py-5"
+                class="scroll-mt-28 space-y-4"
               >
-                <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <LoaderCircle :size="16" class="animate-spin" />
-                  {{ t('stage2Subtitle') }}
+                <div
+                  v-if="(message as AssistantMessage).loading?.stage1 && !Object.keys((message as AssistantMessage).stream?.stage1 || {}).length"
+                  class="rounded-2xl border border-border/80 bg-muted/30 px-5 py-5"
+                >
+                  <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <LoaderCircle :size="16" class="animate-spin" />
+                    {{ t('stage1Subtitle') }}
+                  </div>
                 </div>
-              </div>
 
-              <StageTwoCard
-                v-if="(message as AssistantMessage).stage2 || Object.keys((message as AssistantMessage).stream?.stage2 || {}).length"
+                <StageOneCard
+                  v-if="(message as AssistantMessage).stage1 || Object.keys((message as AssistantMessage).stream?.stage1 || {}).length"
+                  :responses="(message as AssistantMessage).stage1 || []"
+                  :stream-state="(message as AssistantMessage).stream?.stage1"
+                  :stream-meta="(message as AssistantMessage).streamMeta?.stage1"
+                  :council-order="councilOrder"
+                />
+              </section>
+
+              <section
+                v-if="hasStageSection(message as AssistantMessage, 'stage2')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage2')"
-                :rankings="(message as AssistantMessage).stage2 || []"
-                :label-to-model="(message as AssistantMessage).metadata?.label_to_model"
-                :aggregate-rankings="(message as AssistantMessage).metadata?.aggregate_rankings"
-                :stream-state="(message as AssistantMessage).stream?.stage2"
-                :stream-meta="(message as AssistantMessage).streamMeta?.stage2"
-                :council-order="councilOrder"
-              />
-
-              <div
-                v-if="(message as AssistantMessage).loading?.stage3 && !((message as AssistantMessage).stream?.stage3?.response || (message as AssistantMessage).stream?.stage3?.thinking)"
-                class="rounded-2xl border border-border/80 bg-muted/30 px-5 py-5"
+                class="scroll-mt-28 space-y-4"
               >
-                <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                  <LoaderCircle :size="16" class="animate-spin" />
-                  {{ t('stage3Subtitle') }}
+                <div
+                  v-if="(message as AssistantMessage).loading?.stage2 && !Object.keys((message as AssistantMessage).stream?.stage2 || {}).length"
+                  class="rounded-2xl border border-border/80 bg-muted/30 px-5 py-5"
+                >
+                  <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <LoaderCircle :size="16" class="animate-spin" />
+                    {{ t('stage2Subtitle') }}
+                  </div>
                 </div>
-              </div>
 
-              <StageThreeCard
-                v-if="(message as AssistantMessage).stage3 || (message as AssistantMessage).stream?.stage3?.response || (message as AssistantMessage).stream?.stage3?.thinking"
+                <StageTwoCard
+                  v-if="(message as AssistantMessage).stage2 || Object.keys((message as AssistantMessage).stream?.stage2 || {}).length"
+                  :rankings="(message as AssistantMessage).stage2 || []"
+                  :label-to-model="(message as AssistantMessage).metadata?.label_to_model"
+                  :aggregate-rankings="(message as AssistantMessage).metadata?.aggregate_rankings"
+                  :stream-state="(message as AssistantMessage).stream?.stage2"
+                  :stream-meta="(message as AssistantMessage).streamMeta?.stage2"
+                  :council-order="councilOrder"
+                />
+              </section>
+
+              <section
+                v-if="hasStageSection(message as AssistantMessage, 'stage3')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage3')"
-                :final-response="(message as AssistantMessage).stage3"
-                :stream-state="(message as AssistantMessage).stream?.stage3"
-                :stream-meta="(message as AssistantMessage).streamMeta?.stage3"
-              />
+                class="scroll-mt-28 space-y-4"
+              >
+                <div
+                  v-if="(message as AssistantMessage).loading?.stage3 && !((message as AssistantMessage).stream?.stage3?.response || (message as AssistantMessage).stream?.stage3?.thinking)"
+                  class="rounded-2xl border border-border/80 bg-muted/30 px-5 py-5"
+                >
+                  <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                    <LoaderCircle :size="16" class="animate-spin" />
+                    {{ t('stage3Subtitle') }}
+                  </div>
+                </div>
+
+                <StageThreeCard
+                  v-if="(message as AssistantMessage).stage3 || (message as AssistantMessage).stream?.stage3?.response || (message as AssistantMessage).stream?.stage3?.thinking || (message as AssistantMessage).streamMeta?.stage3?.status === 'error'"
+                  :final-response="(message as AssistantMessage).stage3"
+                  :stream-state="(message as AssistantMessage).stream?.stage3"
+                  :stream-meta="(message as AssistantMessage).streamMeta?.stage3"
+                />
+              </section>
 
               <TraceLog :metadata="(message as AssistantMessage).metadata" />
             </div>
           </div>
         </div>
-
-        <div ref="messagesEnd" />
       </div>
     </div>
 
-    <div v-if="conversation" class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6">
+    <div
+      v-if="conversation && canComposeInConversation"
+      class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6"
+    >
       <div class="mx-auto w-full max-w-6xl">
         <ChatComposer
           v-model="draftValue"
@@ -395,6 +446,21 @@ const isAssistantStreaming = (message: AssistantMessage) =>
           @open-settings="emit('open-settings')"
           @send="handleSend"
         />
+      </div>
+    </div>
+
+    <div
+      v-else-if="conversation"
+      class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6"
+    >
+      <div class="mx-auto flex w-full max-w-6xl flex-col gap-3 rounded-[1.5rem] border border-border/80 bg-card/90 px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0">
+          <div class="text-sm font-semibold text-foreground">{{ t('conversationSingleMessageHint') }}</div>
+        </div>
+        <Button size="sm" class="shrink-0" @click="emit('new-conversation')">
+          <Plus :size="16" />
+          {{ t('topBarNewChat') }}
+        </Button>
       </div>
     </div>
   </section>

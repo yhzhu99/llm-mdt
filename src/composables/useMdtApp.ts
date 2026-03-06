@@ -1415,9 +1415,16 @@ export function useMdtApp() {
     const conversationIdForRequest = conversationForRequest.id
     const activeProjectId = conversationForRequest.project_id
     const currentRunState = conversationRunStates.value[conversationIdForRequest]
+    const existingMessageCount = Array.isArray(conversationForRequest.messages)
+      ? conversationForRequest.messages.length
+      : conversationCache.value[conversationIdForRequest]?.messages.length || 0
 
     if (currentRunState?.status === 'running') {
       lastProviderError.value = t('errorConversationAlreadyRunning')
+      return
+    }
+
+    if (existingMessageCount > 0) {
       return
     }
 
@@ -1431,9 +1438,6 @@ export function useMdtApp() {
     const userMessage = createUserMessage(trimmedContent)
     const optimisticCreatedAt = conversationForRequest.created_at || new Date().toISOString()
     const optimisticTitle = String(conversationForRequest.title || t('conversationUntitled')).trim()
-    const existingMessageCount = Array.isArray(conversationForRequest.messages)
-      ? conversationForRequest.messages.length
-      : conversationCache.value[conversationIdForRequest]?.messages.length || 0
     const shouldGenerateTitle = existingMessageCount === 0 || !hasResolvedConversationTitle(conversationForRequest)
 
     const nextConversation = updateConversationById(conversationIdForRequest, (conversation) => {

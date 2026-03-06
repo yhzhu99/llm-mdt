@@ -78,35 +78,6 @@ const isThinking = (model: string) =>
 
 const shortModelName = (model: string) => model.split('/')[1] || model
 
-const statusCounts = computed(() => {
-  const counts = {
-    total: tabs.value.length,
-    running: 0,
-    complete: 0,
-    error: 0,
-    waiting: 0,
-  }
-
-  for (const model of tabs.value) {
-    const status = modelStatus(model)
-    if (status === 'running') counts.running += 1
-    else if (status === 'complete') counts.complete += 1
-    else if (status === 'error') counts.error += 1
-    else counts.waiting += 1
-  }
-
-  return counts
-})
-
-const activeStatusLabel = computed(() => {
-  const status = modelStatus(activeModel.value)
-  if (status === 'running' && !hasStartedMainOutput(activeModel.value)) return t('stageStatusThinking')
-  if (status === 'running') return t('stageStatusGenerating')
-  if (status === 'complete') return t('stageStatusComplete')
-  if (status === 'error') return t('stageStatusError')
-  return t('stageStatusWaiting')
-})
-
 watch(
   tabs,
   (models) => {
@@ -156,26 +127,6 @@ const selectModel = (index: number) => {
     :subtitle="t('stage1Subtitle')"
   >
     <div class="space-y-4">
-      <div class="flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-background/80 px-4 py-3 text-xs text-muted-foreground">
-        <span class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
-          <LoaderCircle v-if="statusCounts.running > 0" :size="12" class="animate-spin" />
-          <Sparkles v-else :size="12" />
-          {{ t('stageInspectModel') }}
-        </span>
-        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
-          {{ t('consultationLiveModels') }} {{ statusCounts.running }}/{{ statusCounts.total }}
-        </span>
-        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
-          {{ t('consultationCompletedModels') }} {{ statusCounts.complete }}
-        </span>
-        <span
-          v-if="activeModel"
-          class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1"
-        >
-          {{ shortModelName(activeModel) }} · {{ activeStatusLabel }}
-        </span>
-      </div>
-
       <div class="flex flex-wrap gap-2">
         <button
           v-for="(model, index) in tabs"
@@ -202,38 +153,26 @@ const selectModel = (index: number) => {
             "
           />
           <span>{{ shortModelName(model) }}</span>
-          <span
-            v-if="isThinking(model)"
-            class="inline-flex items-center gap-1 text-xs font-medium text-primary"
-          >
-            <LoaderCircle :size="12" class="animate-spin" />
-            {{ t('stageThinking') }}
-          </span>
-          <span
-            v-else-if="modelStatus(model) === 'complete'"
-            class="text-xs font-medium text-emerald-600"
-          >
-            {{ t('stageStatusComplete') }}
-          </span>
-          <span
-            v-else-if="modelStatus(model) === 'error'"
-            class="text-xs font-medium text-destructive"
-          >
-            {{ t('stageStatusError') }}
-          </span>
         </button>
       </div>
 
       <div class="overflow-hidden rounded-2xl border border-border/80 bg-muted/30">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border/70 px-4 py-3">
           <div class="flex items-center gap-2 text-sm font-medium text-foreground">
+            <span
+              :class="
+                cn(
+                  'h-2.5 w-2.5 rounded-full bg-muted-foreground/40',
+                  modelStatus(activeModel) === 'running' && 'bg-primary',
+                  modelStatus(activeModel) === 'complete' && 'bg-emerald-500',
+                  modelStatus(activeModel) === 'error' && 'bg-destructive',
+                )
+              "
+            />
             <Sparkles :size="16" class="text-primary" />
-            {{ activeModel }}
+            {{ shortModelName(activeModel) }}
           </div>
           <div class="flex items-center gap-2">
-            <span class="hidden rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
-              {{ activeStatusLabel }}
-            </span>
             <CopyButton icon-only :title="t('copyResponse')" :get-text="() => responseText" />
             <button
               type="button"

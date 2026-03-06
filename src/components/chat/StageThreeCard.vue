@@ -38,12 +38,15 @@ const thinkingText = computed(
 )
 const modelName = computed(() => props.finalResponse?.model || 'chairman')
 const hasStartedMainOutput = computed(() => Boolean(responseText.value))
-const statusText = computed(() => {
-  if (props.streamMeta?.status === 'error') return t('stageStatusError')
-  if (props.streamMeta?.status === 'complete' || props.finalResponse) return t('stageStatusComplete')
-  if (!hasStartedMainOutput.value) return t('stageStatusThinking')
-  return t('stageStatusGenerating')
-})
+const shortModelName = computed(() => modelName.value.split('/')[1] || modelName.value)
+const statusDotClass = computed(() =>
+  cn(
+    'h-2.5 w-2.5 rounded-full bg-muted-foreground/40',
+    props.streamMeta?.status === 'running' && 'bg-primary animate-pulse',
+    (props.streamMeta?.status === 'complete' || props.finalResponse) && 'bg-emerald-500',
+    props.streamMeta?.status === 'error' && 'bg-destructive',
+  ),
+)
 </script>
 
 <template>
@@ -51,7 +54,7 @@ const statusText = computed(() => {
     v-if="responseText || thinkingText"
     :id="id"
     :title="t('stage3Title')"
-    :subtitle="`${t('stage3Subtitle')} (${modelName.split('/')[1] || modelName}) ${t('stageStatusDelimiter')} ${statusText}`"
+    :subtitle="t('stage3Subtitle')"
   >
     <template #right>
       <div class="flex items-center gap-2">
@@ -67,20 +70,6 @@ const statusText = computed(() => {
     </template>
 
     <div class="space-y-4">
-      <div class="flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-background/80 px-4 py-3 text-xs text-muted-foreground">
-        <span class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
-          <LoaderCircle v-if="props.streamMeta?.status === 'running'" :size="12" class="animate-spin" />
-          <Crown v-else :size="12" />
-          {{ t('stageInspectModel') }}
-        </span>
-        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
-          {{ modelName.split('/')[1] || modelName }}
-        </span>
-        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
-          {{ statusText }}
-        </span>
-      </div>
-
       <div
         v-if="props.streamMeta?.status === 'running' && !hasStartedMainOutput"
         class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
@@ -91,8 +80,9 @@ const statusText = computed(() => {
 
       <div class="overflow-hidden rounded-2xl border border-border/80 bg-muted/30">
         <div class="flex items-center gap-2 border-b border-border/70 px-4 py-3 text-sm font-medium text-foreground">
+          <span :class="statusDotClass" />
           <Crown :size="16" class="text-primary" />
-          {{ t('stageChairmanSynthesis') }}
+          {{ t('stageChairmanSynthesis') }} · {{ shortModelName }}
         </div>
         <div class="p-4">
           <MarkdownRenderer
@@ -100,6 +90,12 @@ const statusText = computed(() => {
             :source="responseText"
             :class="cn(props.streamMeta?.status === 'running' && 'streaming-prose', 'prose-headings:mt-6 prose-p:my-3')"
           />
+          <div
+            v-else-if="props.streamMeta?.status === 'error'"
+            class="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-5 text-sm text-destructive"
+          >
+            {{ props.streamMeta?.message || t('stageStatusError') }}
+          </div>
           <div v-else class="rounded-xl border border-dashed border-border bg-background/80 px-4 py-5 text-sm text-muted-foreground">
             {{ t('stageWaitingSynthesis') }}
           </div>

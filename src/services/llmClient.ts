@@ -62,14 +62,7 @@ async function readErrorBody(response: Response) {
 }
 
 function buildHeaders(settings: ProviderSettings) {
-  const extraHeaders = Object.fromEntries(
-    Object.entries(settings.extraHeaders ?? {}).filter(
-      ([name, value]) => String(name ?? '').trim() && String(value ?? '').trim(),
-    ),
-  )
-
   return {
-    ...extraHeaders,
     Authorization: `Bearer ${settings.apiKey}`,
     'Content-Type': 'application/json',
   }

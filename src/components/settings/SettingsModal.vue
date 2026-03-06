@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
-import { AlertTriangle, KeyRound, Server, Settings2, ShieldAlert, X } from 'lucide-vue-next'
+import { KeyRound, Server, Settings2, ShieldAlert, X } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
 
@@ -10,7 +10,6 @@ interface ProviderSettingsLike {
   councilModels?: string[] | string
   chairmanModel?: string
   titleModel?: string
-  extraHeaders?: Record<string, string>
 }
 
 const props = defineProps<{
@@ -33,33 +32,12 @@ let previousFocusedElement: HTMLElement | null = null
 const formatModelList = (models?: string[] | string) =>
   Array.isArray(models) ? models.join('\n') : String(models || '')
 
-const formatHeaderLines = (headers?: Record<string, string>) =>
-  Object.entries(headers || {})
-    .filter(([, value]) => String(value || '').trim())
-    .map(([name, value]) => `${name}: ${value}`)
-    .join('\n')
-
-const parseHeaderLines = (value: string) =>
-  Object.fromEntries(
-    value
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .map((line) => {
-        const separatorIndex = line.indexOf(':')
-        if (separatorIndex <= 0) return null
-        return [line.slice(0, separatorIndex).trim(), line.slice(separatorIndex + 1).trim()]
-      })
-      .filter((entry): entry is [string, string] => Boolean(entry?.[0] && entry[1])),
-  )
-
 const formState = ref({
   baseUrl: '',
   apiKey: '',
   councilModelsText: '',
   chairmanModel: '',
   titleModel: '',
-  extraHeadersText: '',
 })
 
 watch(
@@ -72,7 +50,6 @@ watch(
       councilModelsText: formatModelList(settings?.councilModels),
       chairmanModel: settings?.chairmanModel || '',
       titleModel: settings?.titleModel || settings?.chairmanModel || '',
-      extraHeadersText: formatHeaderLines(settings?.extraHeaders),
     }
   },
   { immediate: true, deep: true },
@@ -93,7 +70,6 @@ const handleSubmit = () => {
     councilModels: formState.value.councilModelsText,
     chairmanModel: formState.value.chairmanModel,
     titleModel: formState.value.titleModel,
-    extraHeaders: parseHeaderLines(formState.value.extraHeadersText),
   })
 }
 
@@ -202,27 +178,14 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="scrollbar-hide flex-1 overflow-y-auto px-6 py-6">
-          <div class="grid gap-4 md:grid-cols-2">
-            <div class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
-              <div class="flex items-start gap-3">
-                <ShieldAlert :size="18" class="mt-0.5 text-amber-600" />
-                <div>
-                  <div class="text-sm font-semibold text-foreground">{{ t('settingsTradeoffTitle') }}</div>
-                  <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                    {{ t('settingsTradeoffBody') }}
-                  </p>
-                </div>
-              </div>
-            </div>
-            <div class="rounded-2xl border border-primary/20 bg-primary/5 p-4">
-              <div class="flex items-start gap-3">
-                <AlertTriangle :size="18" class="mt-0.5 text-primary" />
-                <div>
-                  <div class="text-sm font-semibold text-foreground">{{ t('settingsCorsTitle') }}</div>
-                  <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                    {{ t('settingsCorsBody') }}
-                  </p>
-                </div>
+          <div class="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+            <div class="flex items-start gap-3">
+              <ShieldAlert :size="18" class="mt-0.5 text-amber-600" />
+              <div>
+                <div class="text-sm font-semibold text-foreground">{{ t('settingsTradeoffTitle') }}</div>
+                <p class="mt-1 text-sm leading-6 text-muted-foreground">
+                  {{ t('settingsTradeoffBody') }}
+                </p>
               </div>
             </div>
           </div>
@@ -287,21 +250,11 @@ onBeforeUnmount(() => {
                   :placeholder="t('settingsTitleModelPlaceholder')"
                   class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 />
+                <div class="text-xs text-muted-foreground">
+                  {{ t('settingsTitleModelHelp') }}
+                </div>
               </label>
             </div>
-
-            <label class="block space-y-2">
-              <span class="text-sm font-medium text-foreground">{{ t('settingsExtraHeaders') }}</span>
-              <textarea
-                v-model="formState.extraHeadersText"
-                rows="4"
-                placeholder="HTTP-Referer: https://example.com&#10;X-Title: LLM MDT"
-                class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              />
-              <div class="text-xs text-muted-foreground">
-                {{ t('settingsExtraHeadersHelp') }}
-              </div>
-            </label>
 
             <div
               v-if="error"

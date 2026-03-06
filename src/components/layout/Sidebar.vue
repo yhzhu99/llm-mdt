@@ -445,9 +445,11 @@ const submitProjectCreate = () => {
                             class="h-2 w-2 shrink-0 rounded-full bg-primary"
                           />
                         </div>
-                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <div
+                          v-if="conversationStatusLabel(conversation.id)"
+                          class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground"
+                        >
                           <span
-                            v-if="conversationStatusLabel(conversation.id)"
                             :class="
                               cn(
                                 'inline-flex items-center rounded-full border px-2 py-0.5 font-medium',
@@ -456,9 +458,6 @@ const submitProjectCreate = () => {
                             "
                           >
                             {{ conversationStatusLabel(conversation.id) }}
-                          </span>
-                          <span class="truncate">
-                            {{ t('sidebarMessageCount', { count: conversation.message_count || 0 }) }}
                           </span>
                         </div>
                       </template>

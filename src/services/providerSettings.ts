@@ -15,7 +15,6 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
   councilModels: ['openai/gpt-5.2', 'google/gemini-3-pro-preview', 'deepseek/deepseek-reasoner'],
   chairmanModel: 'google/gemini-3-pro-preview',
   titleModel: 'google/gemini-3-pro-preview',
-  extraHeaders: {},
 }
 
 function uniqueStrings(values: unknown[]) {
@@ -42,33 +41,6 @@ export function formatModelList(models: string[]) {
   return (models ?? []).join('\n')
 }
 
-export function parseHeaderLines(value: unknown) {
-  const lines = String(value ?? '').split(/\r?\n/)
-  const entries: Array<[string, string]> = []
-
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    const separatorIndex = trimmed.indexOf(':')
-    if (separatorIndex <= 0) continue
-
-    const name = trimmed.slice(0, separatorIndex).trim()
-    const headerValue = trimmed.slice(separatorIndex + 1).trim()
-    if (!name || !headerValue) continue
-    entries.push([name, headerValue])
-  }
-
-  return Object.fromEntries(entries)
-}
-
-export function formatHeaderLines(headers: Record<string, string>) {
-  return Object.entries(headers ?? {})
-    .filter(([, value]) => String(value ?? '').trim())
-    .map(([name, value]) => `${name}: ${value}`)
-    .join('\n')
-}
-
 export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): ProviderSettings {
   const baseUrl = normalizeBaseUrl(input?.baseUrl ?? DEFAULT_PROVIDER_SETTINGS.baseUrl)
   const apiKey = String(input?.apiKey ?? '').trim()
@@ -76,11 +48,6 @@ export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): 
   const chairmanModel =
     String(input?.chairmanModel ?? '').trim() || councilModels[0] || DEFAULT_PROVIDER_SETTINGS.chairmanModel
   const titleModel = String(input?.titleModel ?? '').trim() || chairmanModel || DEFAULT_PROVIDER_SETTINGS.titleModel
-  const extraHeaders = Object.fromEntries(
-    Object.entries(input?.extraHeaders ?? {}).filter(
-      ([name, value]) => String(name ?? '').trim() && String(value ?? '').trim(),
-    ),
-  )
 
   return {
     baseUrl,
@@ -88,7 +55,6 @@ export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): 
     councilModels,
     chairmanModel,
     titleModel,
-    extraHeaders,
   }
 }
 

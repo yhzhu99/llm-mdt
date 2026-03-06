@@ -11,7 +11,6 @@ export interface ProviderSettings {
   councilModels: string[]
   chairmanModel: string
   titleModel: string
-  extraHeaders: Record<string, string>
 }
 
 export interface ProviderSettingsInput {
@@ -20,7 +19,6 @@ export interface ProviderSettingsInput {
   councilModels?: string[] | string
   chairmanModel?: string
   titleModel?: string
-  extraHeaders?: Record<string, string>
 }
 
 export interface RuntimeConfig {
