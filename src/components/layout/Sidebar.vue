@@ -113,6 +113,7 @@ const stageLabel = (stage: ConversationRunStage) => {
 const conversationStatusLabel = (conversationId: string) => {
   const state = conversationRunState(conversationId)
   if (!state || state.status === 'idle') return ''
+  if (state.isRecovering) return t('statusRecoveringShort')
   if (state.status === 'running') {
     const currentStage = stageLabel(state.stage)
     return currentStage ? `${currentStage} · ${t('stageStatusLive')}` : t('stageStatusLive')

@@ -33,6 +33,8 @@ export interface RuntimeConfig {
 
 export interface AppPreferences {
   locale: AppLocale
+  lastProjectId?: string | null
+  lastConversationId?: string | null
 }
 
 export interface Project {
@@ -172,6 +174,7 @@ export interface ConversationRunState {
   lastActivityAt?: string | null
   lastError?: string
   hasUnreadUpdate: boolean
+  isRecovering?: boolean
 }
 
 export interface PersistedConversationRun {

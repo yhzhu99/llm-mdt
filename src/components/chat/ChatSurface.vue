@@ -87,6 +87,7 @@ const props = withDefaults(
     conversation?: ConversationDetail | null
     draft?: string
     isLoading?: boolean
+    isRecovering?: boolean
     runtimeConfig?: RuntimeConfigLike | null
     providerConfigured?: boolean
   }>(),
@@ -94,6 +95,7 @@ const props = withDefaults(
     conversation: null,
     draft: '',
     isLoading: false,
+    isRecovering: false,
     runtimeConfig: null,
     providerConfigured: false,
   },
@@ -211,6 +213,14 @@ const isAssistantStreaming = (message: AssistantMessage) =>
       </div>
 
       <div v-else class="mx-auto flex w-full max-w-6xl flex-col gap-6">
+        <div
+          v-if="isRecovering"
+          class="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary"
+        >
+          <LoaderCircle :size="16" class="animate-spin" />
+          <span>{{ t('conversationRecoveryBanner') }}</span>
+        </div>
+
         <div
           v-if="conversation.messages.length === 0"
           class="rounded-[1.75rem] border border-dashed border-border bg-background/90 px-6 py-10 text-center"

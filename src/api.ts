@@ -5,6 +5,7 @@ import { runMdtConversationStream } from './services/mdtOrchestrator'
 import { projectStore } from './services/projectStore'
 import { isProviderConfigured, settingsStore } from './services/providerSettings'
 import type {
+  AppPreferences,
   AppLocale,
   Conversation,
   HealthStatus,
@@ -124,8 +125,8 @@ export const api = {
     return appPreferencesStore.get()
   },
 
-  async saveAppPreferences(locale: AppLocale) {
-    return appPreferencesStore.save({ locale })
+  async saveAppPreferences(input: Partial<AppPreferences>) {
+    return appPreferencesStore.save(input)
   },
 
   async sendMessage(conversationId: string, payload: SendMessagePayload): Promise<SendMessageResult> {

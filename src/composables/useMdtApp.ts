@@ -87,6 +87,7 @@ const createIdleRunState = (): ConversationRunState => ({
   lastActivityAt: null,
   lastError: '',
   hasUnreadUpdate: false,
+  isRecovering: false,
 })
 
 const createConversationSnapshot = ({
@@ -170,6 +171,10 @@ export function useMdtApp() {
   const isSidebarCollapsed = ref(false)
   const hasHydratedPersistedRuns = ref(false)
   const isResumingPersistedRuns = ref(false)
+  const hasLoadedAppPreferences = ref(false)
+  const hasRestoredSelection = ref(false)
+  const preferredProjectId = ref<string | null>(null)
+  const preferredConversationId = ref<string | null>(null)
   const resumingRunIds = new Set<string>()
 
   const currentProject = computed(
@@ -184,8 +189,12 @@ export function useMdtApp() {
       : createIdleRunState(),
   )
   const currentConversationRunning = computed(() => currentConversationRunState.value.status === 'running')
+  const currentConversationRecovering = computed(() => Boolean(currentConversationRunState.value.isRecovering))
   const hasRunningConversations = computed(() =>
     Object.values(conversationRunStates.value).some((state) => state.status === 'running'),
+  )
+  const hasRecoveringConversations = computed(() =>
+    Object.values(conversationRunStates.value).some((state) => state.status === 'running' && state.isRecovering),
   )
   const latestConversationError = computed(() => {
     const erroredStates = Object.values(conversationRunStates.value)
@@ -205,9 +214,12 @@ export function useMdtApp() {
     if (providerConfigured.value) return 'ready'
     return 'unconfigured'
   })
-  const providerStatusText = computed(() =>
-    getProviderStatusText(providerStatus.value, providerSettings.value, providerErrorMessage.value, locale.value),
-  )
+  const providerStatusText = computed(() => {
+    if (hasRecoveringConversations.value || isResumingPersistedRuns.value) {
+      return t('statusRecovering')
+    }
+    return getProviderStatusText(providerStatus.value, providerSettings.value, providerErrorMessage.value, locale.value)
+  })
 
   const hasResolvedConversationTitle = (conversation?: Pick<Conversation, 'title'> | null) => {
     const trimmed = String(conversation?.title || '').trim()
@@ -310,6 +322,7 @@ export function useMdtApp() {
       ...state,
       ...updates,
       lastActivityAt: now,
+      isRecovering: typeof updates.isRecovering === 'boolean' ? updates.isRecovering : false,
       hasUnreadUpdate:
         typeof updates.hasUnreadUpdate === 'boolean'
           ? updates.hasUnreadUpdate
@@ -401,14 +414,33 @@ export function useMdtApp() {
     try {
       const preferences = await api.getAppPreferences()
       setLocale(preferences.locale)
+      preferredProjectId.value = preferences.lastProjectId || null
+      preferredConversationId.value = preferences.lastConversationId || null
+      if (preferredProjectId.value) {
+        currentProjectId.value = preferredProjectId.value
+      }
+      hasLoadedAppPreferences.value = true
     } catch (error) {
       console.error('Failed to load app preferences', error)
+      hasLoadedAppPreferences.value = true
+    }
+  }
+
+  const saveAppPreferences = async (input: { locale?: 'zh-CN' | 'en'; lastProjectId?: string | null; lastConversationId?: string | null }) => {
+    try {
+      const saved = await api.saveAppPreferences(input)
+      preferredProjectId.value = saved.lastProjectId || null
+      preferredConversationId.value = saved.lastConversationId || null
+      return saved
+    } catch (error) {
+      console.error('Failed to save app preferences', error)
+      return null
     }
   }
 
   const setAppLocale = async (nextLocale: 'zh-CN' | 'en') => {
-    const saved = await api.saveAppPreferences(nextLocale)
-    setLocale(saved.locale)
+    const saved = await saveAppPreferences({ locale: nextLocale })
+    setLocale(saved?.locale || nextLocale)
   }
 
   const loadConversation = async (conversationId: string, options: { force?: boolean } = {}) => {
@@ -717,6 +749,7 @@ export function useMdtApp() {
       lastActivityAt: run.updatedAt,
       lastError: current.lastError,
       hasUnreadUpdate: currentConversationId.value === run.conversationId ? false : true,
+      isRecovering: run.status === 'running',
     }))
   }
 
@@ -801,6 +834,7 @@ export function useMdtApp() {
             lastActivityAt: now,
             lastError: current.lastError || t('orchestratorRunFailed'),
             hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+            isRecovering: false,
           }))
         }
       }
@@ -1159,6 +1193,7 @@ export function useMdtApp() {
                 completedAt: now,
                 lastActivityAt: now,
                 hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+                isRecovering: false,
               }))
               if (getRunState(conversationId).status !== 'error') {
                 lastProviderError.value = ''
@@ -1177,6 +1212,7 @@ export function useMdtApp() {
                 lastActivityAt: now,
                 lastError: errorMessage,
                 hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+                isRecovering: false,
               }))
               break
             }
@@ -1202,6 +1238,7 @@ export function useMdtApp() {
         lastActivityAt: now,
         lastError: errorMessage,
         hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+        isRecovering: false,
       }))
     } finally {
       await syncConversationAfterRun(conversationId, projectId, requestId)
@@ -1380,6 +1417,7 @@ export function useMdtApp() {
       lastActivityAt: startedAt,
       lastError: '',
       hasUnreadUpdate: false,
+      isRecovering: false,
     }
 
     void runConversationTask({
@@ -1395,6 +1433,9 @@ export function useMdtApp() {
   }
 
   watch(currentConversationId, async (conversationId) => {
+    if (hasLoadedAppPreferences.value) {
+      void saveAppPreferences({ lastConversationId: conversationId || null })
+    }
     if (!conversationId) return
     clearConversationUnread(conversationId)
     if (!conversationCache.value[conversationId] || conversationRunStates.value[conversationId]?.status !== 'running') {
@@ -1403,7 +1444,23 @@ export function useMdtApp() {
   })
 
   watch(currentProjectId, async (projectId) => {
-    await loadConversations(projectId)
+    const nextConversations = await loadConversations(projectId)
+
+    if (!hasRestoredSelection.value) {
+      hasRestoredSelection.value = true
+      if (preferredConversationId.value && nextConversations.some((conversation) => conversation.id === preferredConversationId.value)) {
+        currentConversationId.value = preferredConversationId.value
+      } else if (!currentConversationId.value || !nextConversations.some((conversation) => conversation.id === currentConversationId.value)) {
+        currentConversationId.value = null
+      }
+    }
+
+    if (hasLoadedAppPreferences.value) {
+      void saveAppPreferences({
+        lastProjectId: projectId || null,
+        ...(projectId ? {} : { lastConversationId: null }),
+      })
+    }
   })
 
   watch(providerConfigured, (configured) => {
@@ -1424,6 +1481,7 @@ export function useMdtApp() {
     conversationRunStates,
     currentConversation,
     currentConversationId,
+    currentConversationRecovering,
     currentConversationRunState,
     currentConversationRunning,
     currentProject,
@@ -1431,6 +1489,7 @@ export function useMdtApp() {
     draftMessage,
     groupedConversations,
     isLoading: hasRunningConversations,
+    isRecoveringRuns: hasRecoveringConversations,
     isSettingsOpen,
     isSidebarCollapsed,
     lastProviderError,

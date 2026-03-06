@@ -11,6 +11,7 @@ const {
   conversationRunStates,
   currentConversation,
   currentConversationId,
+  currentConversationRecovering,
   currentConversationRunning,
   currentProjectId,
   draftMessage,
@@ -86,6 +87,7 @@ const topBarTitle = computed(() => {
         v-model:draft="draftMessage"
         :conversation="currentConversation"
         :is-loading="currentConversationRunning"
+        :is-recovering="currentConversationRecovering"
         :provider-configured="providerConfigured"
         :runtime-config="runtimeConfig"
         @open-settings="openSettings"

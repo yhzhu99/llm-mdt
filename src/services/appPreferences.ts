@@ -10,15 +10,24 @@ interface AppPreferencesRecord {
 
 export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   locale: 'zh-CN',
+  lastProjectId: null,
+  lastConversationId: null,
 }
 
 export function sanitizeLocale(value: unknown): AppLocale {
   return value === 'en' ? 'en' : 'zh-CN'
 }
 
+function sanitizeOptionalId(value: unknown) {
+  const normalized = String(value ?? '').trim()
+  return normalized || null
+}
+
 export function sanitizeAppPreferences(input?: Partial<AppPreferences> | null): AppPreferences {
   return {
     locale: sanitizeLocale(input?.locale),
+    lastProjectId: sanitizeOptionalId(input?.lastProjectId),
+    lastConversationId: sanitizeOptionalId(input?.lastConversationId),
   }
 }
 
@@ -34,7 +43,11 @@ export const appPreferencesStore = {
   },
 
   async save(input?: Partial<AppPreferences> | null) {
-    const value = sanitizeAppPreferences(input)
+    const existing = await this.get()
+    const value = sanitizeAppPreferences({
+      ...existing,
+      ...(input || {}),
+    })
 
     await withStore('settings', 'readwrite', (store) =>
       requestToPromise(
