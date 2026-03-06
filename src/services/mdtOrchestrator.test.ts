@@ -17,6 +17,7 @@ function createMemoryRepo(): ConversationRepository {
     async createConversation(id) {
       const conversation: Conversation = {
         id: id || 'conversation-1',
+        project_id: 'project_default',
         created_at: '2026-03-06T00:00:00.000Z',
         title: 'New Conversation',
         messages: [],

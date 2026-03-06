@@ -1,5 +1,6 @@
 import { requestToPromise, withStore } from './browserDb'
-import type { ProviderSettings, ProviderSettingsInput } from '@/types'
+import { translate } from '@/i18n'
+import type { AppLocale, ProviderSettings, ProviderSettingsInput } from '@/types'
 
 const SETTINGS_KEY = 'provider'
 
@@ -91,23 +92,23 @@ export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): 
   }
 }
 
-export function validateProviderSettings(input?: ProviderSettingsInput | null) {
+export function validateProviderSettings(input?: ProviderSettingsInput | null, locale: AppLocale = 'zh-CN') {
   const settings = sanitizeProviderSettings(input)
 
   if (!settings.baseUrl) {
-    throw new Error('Enter an OpenAI-compatible base URL.')
+    throw new Error(translate(locale, 'errorSaveBaseUrl'))
   }
 
   if (!settings.apiKey) {
-    throw new Error('Enter an API key to use the browser-only provider.')
+    throw new Error(translate(locale, 'errorSaveApiKey'))
   }
 
   if (settings.councilModels.length === 0) {
-    throw new Error('Enter at least one council model.')
+    throw new Error(translate(locale, 'errorSaveCouncilModels'))
   }
 
   if (!settings.chairmanModel) {
-    throw new Error('Enter a chairman model.')
+    throw new Error(translate(locale, 'errorSaveChairmanModel'))
   }
 
   return settings
@@ -129,8 +130,8 @@ export const settingsStore = {
     return sanitizeProviderSettings(record?.value ?? DEFAULT_PROVIDER_SETTINGS)
   },
 
-  async save(input?: ProviderSettingsInput | null) {
-    const value = validateProviderSettings(input)
+  async save(input?: ProviderSettingsInput | null, locale: AppLocale = 'zh-CN') {
+    const value = validateProviderSettings(input, locale)
 
     await withStore('settings', 'readwrite', (store) =>
       requestToPromise(

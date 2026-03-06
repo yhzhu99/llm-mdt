@@ -1,10 +1,5 @@
-import type { ConversationSummary, ProviderSettings, RuntimeConfig } from '@/types'
-
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
+import { translate } from '@/i18n'
+import type { AppLocale, ConversationSummary, ProviderSettings, RuntimeConfig } from '@/types'
 
 const normalizeDateKey = (iso: string) => {
   const date = new Date(iso)
@@ -13,28 +8,33 @@ const normalizeDateKey = (iso: string) => {
   ).padStart(2, '0')}`
 }
 
-const getRelativeLabel = (iso: string) => {
+const getRelativeLabel = (iso: string, locale: AppLocale) => {
   const date = new Date(iso)
   const today = new Date()
   const todayKey = normalizeDateKey(today.toISOString())
   const targetKey = normalizeDateKey(iso)
+  const dateFormatter = new Intl.DateTimeFormat(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  })
 
-  if (targetKey === todayKey) return 'Today'
+  if (targetKey === todayKey) return translate(locale, 'dateToday')
 
   const yesterday = new Date(today)
   yesterday.setDate(today.getDate() - 1)
-  if (targetKey === normalizeDateKey(yesterday.toISOString())) return 'Yesterday'
+  if (targetKey === normalizeDateKey(yesterday.toISOString())) return translate(locale, 'dateYesterday')
 
   return dateFormatter.format(date)
 }
 
-export function groupConversationsByDate(conversations: ConversationSummary[]) {
+export function groupConversationsByDate(conversations: ConversationSummary[], locale: AppLocale) {
   const sorted = [...(conversations || [])].sort(
     (left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime(),
   )
 
   return sorted.reduce<Record<string, ConversationSummary[]>>((groups, conversation) => {
-    const label = getRelativeLabel(conversation.created_at)
+    const label = getRelativeLabel(conversation.created_at, locale)
     if (!groups[label]) {
       groups[label] = []
     }
@@ -71,12 +71,15 @@ export function getProviderStatusText(
   status: 'ready' | 'running' | 'error' | 'unconfigured',
   settings: ProviderSettings | null,
   errorMessage: string,
+  locale: AppLocale,
 ) {
-  if (status === 'running') return 'Running MDT locally'
-  if (status === 'error') return errorMessage || 'Provider error'
+  if (status === 'running') return translate(locale, 'statusRunning')
+  if (status === 'error') return errorMessage || translate(locale, 'statusProviderError')
   if (status === 'ready') {
     const host = getProviderHost(settings?.baseUrl || '')
-    return host ? `Ready · ${host}` : 'Ready'
+    return host
+      ? translate(locale, 'statusReadyHost', { host })
+      : translate(locale, 'statusReady')
   }
-  return 'Configure local provider'
+  return translate(locale, 'statusConfigureProvider')
 }

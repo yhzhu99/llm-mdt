@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { resetBrowserDb } from './browserDb'
 import { conversationStore } from './conversationStore'
+import { DEFAULT_PROJECT_ID, projectStore } from './projectStore'
 
 describe('conversationStore', () => {
   beforeEach(async () => {
@@ -14,6 +15,7 @@ describe('conversationStore', () => {
 
     const conversation = await conversationStore.getConversation('conv-1')
     expect(conversation?.title).toBe('Browser MDT')
+    expect(conversation?.project_id).toBe(DEFAULT_PROJECT_ID)
     expect(conversation?.messages).toHaveLength(1)
     expect(conversation?.messages[0]).toMatchObject({
       content: 'How should the MDT work?',
@@ -23,6 +25,7 @@ describe('conversationStore', () => {
     expect(listed).toEqual([
       expect.objectContaining({
         id: 'conv-1',
+        project_id: DEFAULT_PROJECT_ID,
         title: 'Browser MDT',
         message_count: 1,
       }),
@@ -42,5 +45,27 @@ describe('conversationStore', () => {
     expect(await conversationStore.deleteConversation('conv-1')).toBe(true)
     expect(await conversationStore.deleteConversation('conv-1')).toBe(false)
     expect(await conversationStore.listConversations()).toEqual([])
+  })
+
+  it('lists conversations by project', async () => {
+    const project = await projectStore.createProject('Project A')
+    await conversationStore.createConversationForProject(project.id, {
+      conversationId: 'conv-a',
+      title: 'Project Conversation',
+    })
+    await conversationStore.createConversation('conv-default')
+
+    expect(await conversationStore.listConversations(project.id)).toEqual([
+      expect.objectContaining({
+        id: 'conv-a',
+        project_id: project.id,
+      }),
+    ])
+    expect(await conversationStore.listConversations(DEFAULT_PROJECT_ID)).toEqual([
+      expect.objectContaining({
+        id: 'conv-default',
+        project_id: DEFAULT_PROJECT_ID,
+      }),
+    ])
   })
 })

@@ -1,9 +1,9 @@
 const DB_NAME = 'llm-mdt'
-const DB_VERSION = 1
+const DB_VERSION = 2
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
-export type BrowserStoreName = 'conversations' | 'settings'
+export type BrowserStoreName = 'conversations' | 'settings' | 'projects'
 export type BrowserStoreSelection = IDBObjectStore | Record<BrowserStoreName, IDBObjectStore>
 
 function createError(message: string) {
@@ -38,8 +38,10 @@ export function openBrowserDb() {
 
     const request = indexedDB.open(DB_NAME, DB_VERSION)
 
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result
+      const transaction = request.transaction
+      const oldVersion = event.oldVersion
 
       if (!db.objectStoreNames.contains('conversations')) {
         db.createObjectStore('conversations', { keyPath: 'id' })
@@ -47,6 +49,38 @@ export function openBrowserDb() {
 
       if (!db.objectStoreNames.contains('settings')) {
         db.createObjectStore('settings', { keyPath: 'key' })
+      }
+
+      if (!db.objectStoreNames.contains('projects')) {
+        db.createObjectStore('projects', { keyPath: 'id' })
+      }
+
+      if (oldVersion < 2 && transaction && db.objectStoreNames.contains('conversations')) {
+        const projectsStore = transaction.objectStore('projects')
+        const conversationsStore = transaction.objectStore('conversations')
+        const defaultProjectId = 'project_default'
+
+        projectsStore.put({
+          id: defaultProjectId,
+          name: '默认项目',
+          created_at: new Date().toISOString(),
+          is_default: true,
+        })
+
+        const cursorRequest = conversationsStore.openCursor()
+        cursorRequest.onsuccess = () => {
+          const cursor = cursorRequest.result
+          if (!cursor) return
+
+          const value = cursor.value as Record<string, unknown>
+          if (!value.project_id) {
+            cursor.update({
+              ...value,
+              project_id: defaultProjectId,
+            })
+          }
+          cursor.continue()
+        }
       }
     }
 

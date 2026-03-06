@@ -1,7 +1,10 @@
 import { conversationStore } from './services/conversationStore'
+import { appPreferencesStore } from './services/appPreferences'
 import { runMdtConversationStream } from './services/mdtOrchestrator'
+import { projectStore } from './services/projectStore'
 import { isProviderConfigured, settingsStore } from './services/providerSettings'
 import type {
+  AppLocale,
   HealthStatus,
   MdtEventHandler,
   ProviderSettingsInput,
@@ -21,8 +24,8 @@ function toRuntimeConfig(settings: Awaited<ReturnType<typeof settingsStore.get>>
 }
 
 export const api = {
-  async listConversations() {
-    return conversationStore.listConversations()
+  async listConversations(projectId?: string | null) {
+    return conversationStore.listConversations(projectId)
   },
 
   async health(): Promise<HealthStatus> {
@@ -41,8 +44,8 @@ export const api = {
     return settingsStore.get()
   },
 
-  async saveProviderSettings(settings: ProviderSettingsInput) {
-    return settingsStore.save(settings)
+  async saveProviderSettings(settings: ProviderSettingsInput, locale?: AppLocale) {
+    return settingsStore.save(settings, locale)
   },
 
   async clearProviderSettings() {
@@ -51,6 +54,10 @@ export const api = {
 
   async createConversation() {
     return conversationStore.createConversation()
+  },
+
+  async createConversationForProject(projectId: string, title = '') {
+    return conversationStore.createConversationForProject(projectId, { title })
   },
 
   async getConversation(conversationId: string) {
@@ -71,6 +78,30 @@ export const api = {
 
   async renameConversation(conversationId: string, title: string) {
     return conversationStore.updateConversationTitle(conversationId, title)
+  },
+
+  async listProjects() {
+    return projectStore.listProjects()
+  },
+
+  async createProject(name: string) {
+    return projectStore.createProject(name)
+  },
+
+  async renameProject(projectId: string, name: string) {
+    return projectStore.renameProject(projectId, name)
+  },
+
+  async deleteProject(projectId: string) {
+    return projectStore.deleteProject(projectId)
+  },
+
+  async getAppPreferences() {
+    return appPreferencesStore.get()
+  },
+
+  async saveAppPreferences(locale: AppLocale) {
+    return appPreferencesStore.save({ locale })
   },
 
   async sendMessage(conversationId: string, payload: SendMessagePayload): Promise<SendMessageResult> {

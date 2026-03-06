@@ -1,6 +1,7 @@
 export type MessageRole = 'user' | 'assistant'
 export type StreamDeltaType = 'content' | 'reasoning'
 export type StreamStatus = 'idle' | 'running' | 'complete' | 'error'
+export type AppLocale = 'zh-CN' | 'en'
 
 export interface ProviderSettings {
   baseUrl: string
@@ -28,8 +29,28 @@ export interface RuntimeConfig {
   base_url: string
 }
 
+export interface AppPreferences {
+  locale: AppLocale
+}
+
+export interface Project {
+  id: string
+  name: string
+  created_at: string
+  is_default?: boolean
+}
+
+export interface ProjectSummary {
+  id: string
+  name: string
+  created_at: string
+  conversation_count: number
+  is_default?: boolean
+}
+
 export interface ConversationSummary {
   id: string
+  project_id: string
   created_at: string
   title: string
   message_count: number
@@ -134,6 +155,7 @@ export type ConversationMessage = UserConversationMessage | AssistantConversatio
 
 export interface Conversation {
   id: string
+  project_id: string
   created_at: string
   title: string
   messages: ConversationMessage[]

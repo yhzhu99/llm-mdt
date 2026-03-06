@@ -1,4 +1,5 @@
 import { requestToPromise, withStore } from './browserDb'
+import { projectStore } from './projectStore'
 import type {
   AssistantMessageRecord,
   Conversation,
@@ -32,8 +33,9 @@ function sortByCreatedAtDesc(items: ConversationSummary[]) {
 function toMetadata(conversation: Conversation): ConversationSummary {
   return {
     id: conversation.id,
+    project_id: conversation.project_id,
     created_at: conversation.created_at,
-    title: conversation.title || 'New Conversation',
+    title: conversation.title || '',
     message_count: Array.isArray(conversation.messages) ? conversation.messages.length : 0,
   }
 }
@@ -50,28 +52,64 @@ function normalizeMessages(messages: ConversationMessage[] | undefined) {
   return Array.isArray(messages) ? cloneValue(messages) : []
 }
 
+async function ensureProjectId(projectId?: string) {
+  if (projectId) return projectId
+  const project = await projectStore.ensureDefaultProject()
+  return project.id
+}
+
 function asObjectStore(store: IDBObjectStore | Record<string, IDBObjectStore>) {
   return store as IDBObjectStore
 }
 
 export const conversationStore: ConversationRepository & {
+  createConversationForProject: (
+    projectId: string,
+    options?: {
+      conversationId?: string
+      title?: string
+    },
+  ) => Promise<Conversation>
   deleteConversation: (conversationId: string) => Promise<boolean>
-  listConversations: () => Promise<ConversationSummary[]>
+  listConversations: (projectId?: string | null) => Promise<ConversationSummary[]>
   clearAll: () => Promise<void>
 } = {
-  async listConversations() {
+  async listConversations(projectId) {
+    await projectStore.ensureDefaultProject()
     const conversations = await withStore('conversations', 'readonly', (store) =>
       requestToPromise(asObjectStore(store).getAll() as IDBRequest<Conversation[]>),
     )
 
-    return sortByCreatedAtDesc(conversations.map(toMetadata))
+    const normalizedProjectId = projectId || null
+
+    return sortByCreatedAtDesc(
+      conversations
+        .filter((conversation) => !normalizedProjectId || conversation.project_id === normalizedProjectId)
+        .map(toMetadata),
+    )
   },
 
   async createConversation(conversationId = createId('conversation')) {
+    const projectId = await ensureProjectId()
     const conversation: Conversation = {
       id: conversationId,
+      project_id: projectId,
       created_at: new Date().toISOString(),
-      title: 'New Conversation',
+      title: '',
+      messages: [],
+    }
+
+    await this.saveConversation(conversation)
+    return cloneValue(conversation)
+  },
+
+  async createConversationForProject(projectId, options) {
+    const nextProjectId = await ensureProjectId(projectId)
+    const conversation: Conversation = {
+      id: options?.conversationId || createId('conversation'),
+      project_id: nextProjectId,
+      created_at: new Date().toISOString(),
+      title: String(options?.title ?? '').trim(),
       messages: [],
     }
 
@@ -80,6 +118,7 @@ export const conversationStore: ConversationRepository & {
   },
 
   async getConversation(conversationId: string) {
+    await projectStore.ensureDefaultProject()
     const conversation = await withStore('conversations', 'readonly', (store) =>
       requestToPromise(asObjectStore(store).get(conversationId) as IDBRequest<Conversation | undefined>),
     )
@@ -88,9 +127,11 @@ export const conversationStore: ConversationRepository & {
   },
 
   async saveConversation(conversation: Conversation) {
+    const projectId = await ensureProjectId(conversation.project_id)
     const normalized: Conversation = {
       ...cloneValue(conversation),
-      title: conversation.title || 'New Conversation',
+      project_id: projectId,
+      title: String(conversation.title ?? '').trim(),
       messages: normalizeMessages(conversation.messages),
     }
 
@@ -130,7 +171,7 @@ export const conversationStore: ConversationRepository & {
 
   async updateConversationTitle(conversationId: string, title: string) {
     const conversation = await loadConversationOrThrow(conversationId)
-    conversation.title = String(title || '').trim() || 'Conversation'
+    conversation.title = String(title || '').trim()
     await this.saveConversation(conversation)
     return cloneValue(conversation)
   },
