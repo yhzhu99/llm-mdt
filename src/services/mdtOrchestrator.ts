@@ -196,6 +196,8 @@ async function collectStageResponses({
 
       let contentAcc = ''
       let reasoningDetails: string | null = null
+      let reasoningSummary: string | null = null
+      let reasoningVisibility: 'none' | 'summary' | 'details' = 'none'
       let failed = false
 
       try {
@@ -218,6 +220,8 @@ async function collectStageResponses({
             } as MdtStreamEvent)
           } else if (event.delta_type === 'final') {
             reasoningDetails = event.reasoning_details
+            reasoningSummary = event.reasoning_summary || null
+            reasoningVisibility = event.reasoning_visibility || 'none'
             if (!contentAcc && event.content) {
               contentAcc = event.content
             }
@@ -248,12 +252,16 @@ async function collectStageResponses({
                 model,
                 response: contentAcc,
                 reasoning_details: reasoningDetails,
+                reasoning_summary: reasoningSummary,
+                reasoning_visibility: reasoningVisibility,
               }
             : {
                 model,
                 ranking: contentAcc,
                 parsed_ranking: [],
                 reasoning_details: reasoningDetails,
+                reasoning_summary: reasoningSummary,
+                reasoning_visibility: reasoningVisibility,
               },
         )
       }
@@ -385,6 +393,8 @@ export async function runMdtConversationStream({
       emit({ type: 'stage3_start' })
       let stage3Content = ''
       let stage3Reasoning: string | null = null
+      let stage3ReasoningSummary: string | null = null
+      let stage3ReasoningVisibility: 'none' | 'summary' | 'details' = 'none'
       let stage3Failed = false
 
       for await (const event of client.chatCompletionStream(settings, {
@@ -404,6 +414,8 @@ export async function runMdtConversationStream({
           emit({ type: 'stage3_delta', delta_type: 'reasoning', text: event.text || '' })
         } else if (event.delta_type === 'final') {
           stage3Reasoning = event.reasoning_details
+          stage3ReasoningSummary = event.reasoning_summary || null
+          stage3ReasoningVisibility = event.reasoning_visibility || 'none'
           if (!stage3Content && event.content) {
             stage3Content = event.content
           }
@@ -422,6 +434,8 @@ export async function runMdtConversationStream({
             ? translate(locale, 'orchestratorFinalSynthesisFailed')
             : translate(locale, 'orchestratorFinalSynthesisMissing')),
         reasoning_details: stage3Reasoning,
+        reasoning_summary: stage3ReasoningSummary,
+        reasoning_visibility: stage3ReasoningVisibility,
       }
       emit({ type: 'stage3_complete', data: stage3Result })
     } else {
@@ -437,6 +451,8 @@ export async function runMdtConversationStream({
         model: settings.chairmanModel,
         response: translate(locale, 'orchestratorAllModelsFailed'),
         reasoning_details: null,
+        reasoning_summary: null,
+        reasoning_visibility: 'none',
       }
       emit({ type: 'stage3_complete', data: stage3Result })
     }
@@ -460,6 +476,8 @@ export async function runMdtConversationStream({
         model: settings.chairmanModel,
         response: translate(locale, 'orchestratorRunFailed'),
         reasoning_details: null,
+        reasoning_summary: null,
+        reasoning_visibility: 'none',
       }
       emit({ type: 'stage3_complete', data: stage3Result })
     }

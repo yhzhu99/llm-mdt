@@ -4,6 +4,7 @@ export type StreamStatus = 'idle' | 'running' | 'complete' | 'error'
 export type AppLocale = 'zh-CN' | 'en'
 export type ConversationRunStage = 'stage1' | 'stage2' | 'stage3' | null
 export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error'
+export type ReasoningVisibility = 'none' | 'summary' | 'details'
 
 export interface ProviderSettings {
   baseUrl: string
@@ -69,6 +70,8 @@ export interface Stage1Result {
   model: string
   response: string
   reasoning_details: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: ReasoningVisibility
 }
 
 export interface Stage2Result {
@@ -76,12 +79,16 @@ export interface Stage2Result {
   ranking: string
   parsed_ranking: string[]
   reasoning_details: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: ReasoningVisibility
 }
 
 export interface Stage3Result {
   model: string
   response: string
   reasoning_details: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: ReasoningVisibility
 }
 
 export interface AggregateRanking {
@@ -238,12 +245,20 @@ export interface ChatCompletionOptions {
 export interface ChatCompletionResult {
   content: string
   reasoning_details: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: ReasoningVisibility
 }
 
 export type ChatCompletionStreamEvent =
   | { delta_type: 'content'; text: string }
   | { delta_type: 'reasoning'; text: string }
-  | { delta_type: 'final'; content: string; reasoning_details: string | null }
+  | {
+      delta_type: 'final'
+      content: string
+      reasoning_details: string | null
+      reasoning_summary?: string | null
+      reasoning_visibility?: ReasoningVisibility
+    }
   | { delta_type: 'error'; message: string }
 
 export interface ChatCompletionClient {

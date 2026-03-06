@@ -27,12 +27,16 @@ interface StageOneResponse {
   model: string
   response: string
   reasoning_details?: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: 'none' | 'summary' | 'details'
 }
 
 interface StageTwoRanking {
   model: string
   ranking: string
   reasoning_details?: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: 'none' | 'summary' | 'details'
   parsed_ranking?: string[]
 }
 
@@ -46,6 +50,8 @@ interface StageThreeResult {
   model: string
   response: string
   reasoning_details?: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: 'none' | 'summary' | 'details'
 }
 
 interface AssistantMessage extends ConversationMessageBase {

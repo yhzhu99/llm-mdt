@@ -40,6 +40,7 @@ Each conversation is designed as a **single consultation**: one user prompt, fol
 - **Frontend-only MDT orchestration** with no runtime backend
 - **Anonymized peer review** to reduce model-name bias
 - **Streaming stage updates** for Stage 1, Stage 2, and Stage 3
+- **Automatic reasoning controls** that request the highest documented reasoning level for supported OpenAI / Gemini-compatible providers and surface reasoning summaries when available
 - **Local persistence** for chats, rankings, and trace metadata
 - **Provider configuration in the browser** for base URL, API key, council models, chairman model, and an optional dedicated title model
 - **Cloudflare Pages friendly** static deployment
@@ -76,7 +77,7 @@ Open `http://localhost:5173`.
 
 Click **Settings** and enter:
 
-- an OpenAI-compatible chat completions URL
+- an OpenAI-compatible base URL or endpoint
 - your API key
 - one model per line for the council
 - the chairman model
@@ -84,8 +85,12 @@ Click **Settings** and enter:
 
 Example base URLs:
 
+- `https://zenmux.ai/api/v1`
 - `https://openrouter.ai/api/v1/chat/completions`
+- `https://api.openai.com/v1`
 - any other OpenAI-compatible endpoint you control
+
+If a provider supports the Responses API, LLM MDT automatically switches to it for supported models so GPT-5-style reasoning summaries can be displayed. Otherwise it falls back to standard chat completions and shows any provider-returned reasoning details.
 
 ## Local Storage Model
 

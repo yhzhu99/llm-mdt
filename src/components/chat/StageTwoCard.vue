@@ -11,6 +11,8 @@ interface StageTwoRanking {
   model: string
   ranking: string
   reasoning_details?: string | null
+  reasoning_summary?: string | null
+  reasoning_visibility?: 'none' | 'summary' | 'details'
   parsed_ranking?: string[]
 }
 
@@ -75,7 +77,16 @@ const deAnonymizeText = (text: string) => {
 const rankingText = computed(() => activeRanking.value?.ranking || activeStream.value?.ranking || '')
 const displayRankingText = computed(() => deAnonymizeText(rankingText.value))
 const thinkingText = computed(
-  () => deAnonymizeText(activeRanking.value?.reasoning_details || activeStream.value?.thinking || ''),
+  () =>
+    deAnonymizeText(
+      activeRanking.value?.reasoning_summary || activeRanking.value?.reasoning_details || activeStream.value?.thinking || '',
+    ),
+)
+const reasoningHeading = computed(() =>
+  activeRanking.value?.reasoning_summary ? t('stageReasoningSummary') : t('stageThinking'),
+)
+const emptyReasoningText = computed(() =>
+  activeRanking.value ? t('stageNoVisibleReasoning') : t('stageNoThinking'),
 )
 
 const hasStartedMainOutput = (model: string) => {
@@ -269,14 +280,14 @@ const selectModel = (index: number) => {
 
       <div v-if="showThinking" class="rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-4">
         <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-          {{ t('stageThinking') }}
+          {{ reasoningHeading }}
         </div>
         <MarkdownRenderer
           v-if="thinkingText"
           :source="thinkingText"
           :class="cn(props.streamMeta?.[activeModel]?.status === 'running' && 'streaming-prose', 'prose-p:my-2 prose-headings:mt-4')"
         />
-        <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
+        <div v-else class="text-sm text-muted-foreground">{{ emptyReasoningText }}</div>
       </div>
 
       <div
