@@ -130,6 +130,29 @@ const conversationStatusClass = (conversationId: string) => {
   return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
 }
 
+const showCollapsedConversationDot = (conversationId: string) => {
+  if (!props.isCollapsed) return false
+  const state = conversationRunState(conversationId)
+  return Boolean(state && (state.status !== 'idle' || state.hasUnreadUpdate))
+}
+
+const conversationStatusDotClass = (conversationId: string) => {
+  const state = conversationRunState(conversationId)
+  if (!state || state.status === 'idle') {
+    return state?.hasUnreadUpdate ? 'bg-primary' : ''
+  }
+  if (state.status === 'running') return 'bg-primary animate-pulse'
+  if (state.status === 'error') return 'bg-destructive'
+  return 'bg-emerald-500'
+}
+
+const conversationButtonTitle = (conversation: ConversationSummary) => {
+  const parts = [displayConversationTitle(conversation)]
+  const status = conversationStatusLabel(conversation.id)
+  if (status) parts.push(status)
+  return parts.join(' · ')
+}
+
 const startProjectRename = (project: ProjectSummary) => {
   openProjectMenuId.value = null
   renamingProjectId.value = project.id
@@ -384,12 +407,23 @@ const submitProjectCreate = () => {
                   <button
                     type="button"
                     class="flex w-full min-w-0 items-center gap-3 text-left"
+                    :title="isCollapsed ? conversationButtonTitle(conversation) : undefined"
                     @click="emit('select-conversation', conversation.id)"
                   >
                     <div
-                      class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground"
+                      class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground"
                     >
                       <MessageSquareText :size="18" />
+                      <span
+                        v-if="showCollapsedConversationDot(conversation.id)"
+                        :class="
+                          cn(
+                            'absolute -right-1 -top-1 h-3 w-3 rounded-full border-2 border-background',
+                            conversationStatusDotClass(conversation.id),
+                            conversationRunState(conversation.id)?.hasUnreadUpdate && 'ring-2 ring-primary/20',
+                          )
+                        "
+                      />
                     </div>
 
                     <div v-if="!isCollapsed" class="min-w-0 flex-1">
