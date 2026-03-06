@@ -316,6 +316,25 @@ function extractResponseOutputText(item: Record<string, unknown>) {
   return ''
 }
 
+function buildResponsesStreamKey(payload: Record<string, unknown>, kind: 'content' | 'reasoning') {
+  const itemId = normalizeStructuredText(payload.item_id) || normalizeStructuredText(payload.id) || 'item'
+  const outputIndex = normalizeStructuredText(payload.output_index) || '0'
+  const contentIndex =
+    kind === 'content'
+      ? normalizeStructuredText(payload.content_index)
+      : normalizeStructuredText(payload.summary_index) || normalizeStructuredText(payload.content_index)
+
+  return `${kind}:${outputIndex}:${itemId}:${contentIndex || '0'}`
+}
+
+function takeStreamRemainder(fullText: string, previousText: string) {
+  if (!fullText) return ''
+  if (!previousText) return fullText
+  if (fullText === previousText) return ''
+  if (fullText.startsWith(previousText)) return fullText.slice(previousText.length)
+  return fullText
+}
+
 function parseResponsesResult(data: Record<string, unknown>): ChatCompletionResult {
   const output = Array.isArray(data.output) ? (data.output as Array<Record<string, unknown>>) : []
 
@@ -419,11 +438,58 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
   const type = typeof payload.type === 'string' ? payload.type : ''
 
   if (type === 'response.output_text.delta') {
-    return { delta_type: 'content' as const, text: normalizeStructuredText(payload.delta) }
+    return {
+      delta_type: 'content' as const,
+      text: normalizeStructuredText(payload.delta),
+      stream_key: buildResponsesStreamKey(payload, 'content'),
+      is_done: false,
+    }
   }
 
-  if (type === 'response.reasoning_summary_text.delta' || type === 'response.reasoning_text.delta') {
-    return { delta_type: 'reasoning' as const, text: normalizeStructuredText(payload.delta) }
+  if (type === 'response.output_text.done') {
+    return {
+      delta_type: 'content' as const,
+      text: normalizeStructuredText(payload.text),
+      stream_key: buildResponsesStreamKey(payload, 'content'),
+      is_done: true,
+    }
+  }
+
+  if (
+    type === 'response.reasoning_summary_text.delta' ||
+    type === 'response.reasoning_text.delta' ||
+    type === 'response.reasoning_summary_part.added'
+  ) {
+    return {
+      delta_type: 'reasoning' as const,
+      text: normalizeStructuredText(payload.delta ?? (payload.part as Record<string, unknown> | undefined)?.text),
+      stream_key: buildResponsesStreamKey(payload, 'reasoning'),
+      is_done: false,
+    }
+  }
+
+  if (
+    type === 'response.reasoning_summary_text.done' ||
+    type === 'response.reasoning_text.done' ||
+    type === 'response.reasoning_summary_part.done'
+  ) {
+    return {
+      delta_type: 'reasoning' as const,
+      text: normalizeStructuredText(payload.text ?? (payload.part as Record<string, unknown> | undefined)?.text),
+      stream_key: buildResponsesStreamKey(payload, 'reasoning'),
+      is_done: true,
+    }
+  }
+
+  if (type === 'response.output_item.done' && payload.item && typeof payload.item === 'object') {
+    const item = payload.item as Record<string, unknown>
+    if (item.type === 'reasoning') {
+      return {
+        delta_type: 'final' as const,
+        content: '',
+        reasoning_details: extractUnifiedReasoningText(item) || null,
+      }
+    }
   }
 
   if (type === 'response.completed' && payload.response && typeof payload.response === 'object') {
@@ -454,6 +520,8 @@ async function* streamFromResponse(
   let contentAcc = ''
   let reasoningAcc = ''
   let reasoningDetails: string | null = null
+  const contentBuffers = new Map<string, string>()
+  const reasoningBuffers = new Map<string, string>()
 
   const contentType = response.headers.get('content-type') || ''
   if (contentType.includes('application/json')) {
@@ -503,13 +571,45 @@ async function* streamFromResponse(
           if (!parsedEvent) continue
 
           if (parsedEvent.delta_type === 'content') {
-            contentAcc += parsedEvent.text
-            yield parsedEvent
+            const nextText =
+              parsedEvent.is_done && parsedEvent.stream_key
+                ? takeStreamRemainder(parsedEvent.text, contentBuffers.get(parsedEvent.stream_key) || '')
+                : parsedEvent.text
+
+            if (parsedEvent.stream_key) {
+              contentBuffers.set(
+                parsedEvent.stream_key,
+                parsedEvent.is_done
+                  ? parsedEvent.text || contentBuffers.get(parsedEvent.stream_key) || ''
+                  : `${contentBuffers.get(parsedEvent.stream_key) || ''}${parsedEvent.text}`,
+              )
+            }
+
+            if (nextText) {
+              contentAcc += nextText
+              yield { delta_type: 'content', text: nextText }
+            }
           } else if (parsedEvent.delta_type === 'reasoning') {
-            reasoningAcc += parsedEvent.text
-            yield parsedEvent
+            const nextText =
+              parsedEvent.is_done && parsedEvent.stream_key
+                ? takeStreamRemainder(parsedEvent.text, reasoningBuffers.get(parsedEvent.stream_key) || '')
+                : parsedEvent.text
+
+            if (parsedEvent.stream_key) {
+              reasoningBuffers.set(
+                parsedEvent.stream_key,
+                parsedEvent.is_done
+                  ? parsedEvent.text || reasoningBuffers.get(parsedEvent.stream_key) || ''
+                  : `${reasoningBuffers.get(parsedEvent.stream_key) || ''}${parsedEvent.text}`,
+              )
+            }
+
+            if (nextText) {
+              reasoningAcc += nextText
+              yield { delta_type: 'reasoning', text: nextText }
+            }
           } else if (parsedEvent.delta_type === 'final') {
-            reasoningDetails = parsedEvent.reasoning_details
+            reasoningDetails = parsedEvent.reasoning_details || reasoningDetails
             if (!contentAcc && parsedEvent.content) {
               contentAcc = parsedEvent.content
             }

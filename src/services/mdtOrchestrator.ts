@@ -196,6 +196,7 @@ async function collectStageResponses({
 
       let contentAcc = ''
       let reasoningDetails: string | null = null
+      let reasoningAcc = ''
       let failed = false
 
       try {
@@ -210,6 +211,7 @@ async function collectStageResponses({
               text,
             } as MdtStreamEvent)
           } else if (event.delta_type === 'reasoning') {
+            reasoningAcc += event.text || ''
             emit({
               type: `${stagePrefix}_model_delta`,
               model,
@@ -247,13 +249,13 @@ async function collectStageResponses({
             ? {
                 model,
                 response: contentAcc,
-                reasoning_details: reasoningDetails,
+                reasoning_details: reasoningDetails || reasoningAcc || null,
               }
             : {
                 model,
                 ranking: contentAcc,
                 parsed_ranking: [],
-                reasoning_details: reasoningDetails,
+                reasoning_details: reasoningDetails || reasoningAcc || null,
               },
         )
       }
@@ -385,6 +387,7 @@ export async function runMdtConversationStream({
       emit({ type: 'stage3_start' })
       let stage3Content = ''
       let stage3Reasoning: string | null = null
+      let stage3ReasoningAcc = ''
       let stage3Failed = false
 
       for await (const event of client.chatCompletionStream(settings, {
@@ -401,6 +404,7 @@ export async function runMdtConversationStream({
           stage3Content += text
           emit({ type: 'stage3_delta', delta_type: 'content', text })
         } else if (event.delta_type === 'reasoning') {
+          stage3ReasoningAcc += event.text || ''
           emit({ type: 'stage3_delta', delta_type: 'reasoning', text: event.text || '' })
         } else if (event.delta_type === 'final') {
           stage3Reasoning = event.reasoning_details
@@ -421,7 +425,7 @@ export async function runMdtConversationStream({
           (stage3Failed
             ? translate(locale, 'orchestratorFinalSynthesisFailed')
             : translate(locale, 'orchestratorFinalSynthesisMissing')),
-        reasoning_details: stage3Reasoning,
+        reasoning_details: stage3Reasoning || stage3ReasoningAcc || null,
       }
       emit({ type: 'stage3_complete', data: stage3Result })
     } else {
