@@ -18,6 +18,7 @@ const {
   currentProjectId,
   draftMessage,
   groupedConversations,
+  goHome,
   isSettingsOpen,
   isSidebarCollapsed,
   projects,
@@ -68,6 +69,7 @@ const topBarTitle = computed(() => {
       @create-project="createProject"
       @delete-conversation="deleteConversation"
       @delete-project="deleteProject"
+      @go-home="goHome"
       @new-conversation="newConversation"
       @rename-conversation="renameConversation"
       @rename-project="renameProject"

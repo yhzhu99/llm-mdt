@@ -1,36 +1,24 @@
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   ChevronLeft,
   ChevronRight,
   Ellipsis,
-  FolderOpen,
   FolderPlus,
+  FolderOpen,
   MessageSquareText,
   Pencil,
   Plus,
   Trash2,
+  X,
 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
-import type { ConversationRunStage, ConversationRunState } from '@/types'
+import ModalShell from '@/components/common/ModalShell.vue'
+import ProjectCreateDialog from '@/components/layout/ProjectCreateDialog.vue'
+import ProjectList from '@/components/layout/ProjectList.vue'
+import type { ConversationRunStage, ConversationRunState, ConversationSummary, ProjectSummary } from '@/types'
 import { cn } from '@/utils'
-
-interface ConversationSummary {
-  id: string
-  title?: string
-  project_id: string
-  created_at: string
-  message_count?: number
-}
-
-interface ProjectSummary {
-  id: string
-  name: string
-  created_at: string
-  conversation_count: number
-  is_default?: boolean
-}
 
 const props = withDefaults(
   defineProps<{
@@ -62,20 +50,18 @@ const emit = defineEmits<{
   (event: 'create-project', title: string): void
   (event: 'delete-project', id: string): void
   (event: 'rename-project', id: string, title: string): void
+  (event: 'go-home'): void
   (event: 'toggle-collapsed'): void
 }>()
 
 const { t } = useI18n()
 
-const openProjectMenuId = ref<string | null>(null)
 const openConversationMenuId = ref<string | null>(null)
-const renamingProjectId = ref<string | null>(null)
 const renamingConversationId = ref<string | null>(null)
-const draftProjectName = ref('')
 const draftConversationTitle = ref('')
-const isCreatingProject = ref(false)
-const draftNewProjectName = ref('')
-const newProjectInputRef = ref<HTMLInputElement | null>(null)
+const isProjectCreateOpen = ref(false)
+const isProjectBrowserOpen = ref(false)
+const visibleProjectLimit = 5
 
 const visibleGroups = computed(() => {
   const groupedEntries = Object.entries(props.groupedConversations || {})
@@ -85,16 +71,7 @@ const visibleGroups = computed(() => {
   return groupedEntries
 })
 
-const defaultProjectNames = new Set(['默认项目', 'Default Project'])
 const placeholderConversationTitles = new Set(['', 'New Conversation', 'Conversation', '新对话'])
-
-const displayProjectName = (project: ProjectSummary) => {
-  const trimmed = String(project.name || '').trim()
-  if (project.is_default && defaultProjectNames.has(trimmed)) {
-    return t('projectDefaultName')
-  }
-  return trimmed || t('projectUntitled')
-}
 
 const displayConversationTitle = (conversation: ConversationSummary) => {
   const trimmed = String(conversation.title || '').trim()
@@ -153,23 +130,42 @@ const conversationButtonTitle = (conversation: ConversationSummary) => {
   return parts.join(' · ')
 }
 
-const startProjectRename = (project: ProjectSummary) => {
-  openProjectMenuId.value = null
-  renamingProjectId.value = project.id
-  draftProjectName.value = displayProjectName(project)
+const visibleProjects = computed(() => {
+  if (props.projects.length <= visibleProjectLimit) {
+    return props.projects
+  }
+
+  const leadingProjects = props.projects.slice(0, visibleProjectLimit)
+  const currentProject = props.projects.find((project) => project.id === props.currentProjectId)
+
+  if (!currentProject || leadingProjects.some((project) => project.id === currentProject.id)) {
+    return leadingProjects
+  }
+
+  return [...props.projects.slice(0, visibleProjectLimit - 1), currentProject]
+})
+
+const hiddenProjects = computed(() => {
+  const visibleIds = new Set(visibleProjects.value.map((project) => project.id))
+  return props.projects.filter((project) => !visibleIds.has(project.id))
+})
+
+const hasHiddenProjects = computed(() => hiddenProjects.value.length > 0)
+
+const showMoreProjectsLabel = computed(() =>
+  t('sidebarShowMoreProjects', {
+    count: hiddenProjects.value.length,
+  }),
+)
+
+const openProjectCreate = () => {
+  isProjectCreateOpen.value = true
 }
 
 const startConversationRename = (conversation: ConversationSummary) => {
   openConversationMenuId.value = null
   renamingConversationId.value = conversation.id
   draftConversationTitle.value = displayConversationTitle(conversation)
-}
-
-const submitProjectRename = (projectId: string, fallbackTitle: string) => {
-  const title = draftProjectName.value.trim() || fallbackTitle
-  renamingProjectId.value = null
-  draftProjectName.value = ''
-  emit('rename-project', projectId, title)
 }
 
 const submitConversationRename = (conversationId: string, fallbackTitle: string) => {
@@ -179,31 +175,22 @@ const submitConversationRename = (conversationId: string, fallbackTitle: string)
   emit('rename-conversation', conversationId, title)
 }
 
-const projectInitial = (project: ProjectSummary) => displayProjectName(project).slice(0, 1).toUpperCase()
-
-const openProjectCreate = async () => {
-  if (props.isCollapsed) {
-    emit('toggle-collapsed')
-    await nextTick()
-  }
-
-  isCreatingProject.value = true
-  draftNewProjectName.value = props.suggestedProjectName || ''
-  await nextTick()
-  newProjectInputRef.value?.focus()
-  newProjectInputRef.value?.select()
+const closeProjectCreate = () => {
+  isProjectCreateOpen.value = false
 }
 
-const cancelProjectCreate = () => {
-  isCreatingProject.value = false
-  draftNewProjectName.value = ''
-}
-
-const submitProjectCreate = () => {
-  const title = draftNewProjectName.value.trim()
-  if (!title) return
+const handleProjectCreate = (title: string) => {
   emit('create-project', title)
-  cancelProjectCreate()
+  closeProjectCreate()
+}
+
+const handleProjectSelect = (projectId: string) => {
+  emit('select-project', projectId)
+  isProjectBrowserOpen.value = false
+}
+
+const handleProjectRename = (projectId: string, title: string) => {
+  emit('rename-project', projectId, title)
 }
 </script>
 
@@ -216,10 +203,20 @@ const submitProjectCreate = () => {
       )
     "
   >
-    <div class="border-b border-border/70 px-4 py-4">
-      <div class="flex items-center justify-between gap-3">
-        <div class="flex min-w-0 items-center gap-3">
-          <div class="flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
+    <div :class="cn('border-b border-border/70 py-4', isCollapsed ? 'px-3' : 'px-4')">
+      <div :class="cn('flex gap-3', isCollapsed ? 'flex-col items-center' : 'items-center justify-between')">
+        <button
+          type="button"
+          :title="t('sidebarBackHome')"
+          :class="
+            cn(
+              'group flex min-w-0 items-center text-left transition-transform',
+              isCollapsed ? 'w-11 justify-center' : 'flex-1 gap-3',
+            )
+          "
+          @click="emit('go-home')"
+        >
+          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-[1.02]">
             <MessageSquareText :size="20" />
           </div>
           <div v-if="!isCollapsed" class="min-w-0">
@@ -230,45 +227,32 @@ const submitProjectCreate = () => {
               {{ t('appNameSecondary') }}
             </div>
           </div>
-        </div>
+        </button>
 
-        <Button variant="ghost" size="icon" @click="emit('toggle-collapsed')">
+        <Button variant="ghost" size="icon" class="shrink-0" @click="emit('toggle-collapsed')">
           <ChevronLeft v-if="!isCollapsed" :size="18" />
           <ChevronRight v-else :size="18" />
         </Button>
       </div>
 
       <div class="mt-4 flex flex-col gap-2">
-        <Button class="w-full" @click="openProjectCreate">
+        <Button
+          :class="cn('w-full rounded-xl', isCollapsed ? 'justify-center px-0' : 'justify-start px-3')"
+          :title="isCollapsed ? t('sidebarNewProject') : undefined"
+          @click="openProjectCreate"
+        >
           <FolderPlus :size="16" />
           <span v-if="!isCollapsed">{{ t('sidebarNewProject') }}</span>
         </Button>
-        <Button class="w-full" variant="secondary" @click="emit('new-conversation')">
+        <Button
+          variant="secondary"
+          :class="cn('w-full rounded-xl', isCollapsed ? 'justify-center px-0' : 'justify-start px-3')"
+          :title="isCollapsed ? t('sidebarNewConversation') : undefined"
+          @click="emit('new-conversation')"
+        >
           <Plus :size="16" />
           <span v-if="!isCollapsed">{{ t('sidebarNewConversation') }}</span>
         </Button>
-      </div>
-
-      <div v-if="isCreatingProject && !isCollapsed" class="mt-3 rounded-2xl border border-border/80 bg-background/90 p-3 shadow-sm">
-        <label class="block space-y-2">
-          <span class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-            {{ t('projectCreateName') }}
-          </span>
-          <input
-            ref="newProjectInputRef"
-            v-model="draftNewProjectName"
-            class="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-            :placeholder="t('projectCreatePlaceholder')"
-            @keydown.enter.prevent="submitProjectCreate"
-            @keydown.esc.prevent="cancelProjectCreate"
-          />
-        </label>
-        <div class="mt-3 flex items-center justify-end gap-2">
-          <Button variant="ghost" size="sm" @click="cancelProjectCreate">{{ t('settingsCancel') }}</Button>
-          <Button size="sm" :disabled="!draftNewProjectName.trim()" @click="submitProjectCreate">
-            {{ t('projectCreateConfirm') }}
-          </Button>
-        </div>
       </div>
     </div>
 
@@ -286,87 +270,41 @@ const submitProjectCreate = () => {
             {{ t('sidebarNoProjects') }}
           </div>
 
-          <div v-else class="space-y-1">
-            <div
-              v-for="project in projects"
-              :key="project.id"
+          <template v-else>
+            <ProjectList
+              :projects="visibleProjects"
+              :current-project-id="currentProjectId"
+              :collapsed="isCollapsed"
+              @delete-project="emit('delete-project', $event)"
+              @rename-project="handleProjectRename"
+              @select-project="handleProjectSelect"
+            />
+
+            <button
+              v-if="hasHiddenProjects"
+              type="button"
+              :title="isCollapsed ? showMoreProjectsLabel : undefined"
               :class="
                 cn(
-                  'group relative rounded-2xl border border-transparent px-3 py-3 transition-colors',
-                  currentProjectId === project.id
-                    ? 'border-primary/30 bg-primary/10'
-                    : 'hover:bg-muted/60',
+                  'group flex w-full items-center rounded-2xl border border-dashed border-border/80 px-3 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5',
+                  isCollapsed ? 'justify-center' : 'gap-3',
                 )
               "
+              @click="isProjectBrowserOpen = true"
             >
-              <button
-                type="button"
-                class="flex w-full min-w-0 items-center gap-3 text-left"
-                @click="emit('select-project', project.id)"
-              >
-                <div
-                  :class="
-                    cn(
-                      'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-sm font-semibold text-muted-foreground',
-                      currentProjectId === project.id && 'text-primary',
-                    )
-                  "
-                >
-                  {{ projectInitial(project) }}
-                </div>
-
-                <div v-if="!isCollapsed" class="min-w-0 flex-1">
-                  <input
-                    v-if="renamingProjectId === project.id"
-                    v-model="draftProjectName"
-                    class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-                    @blur="submitProjectRename(project.id, displayProjectName(project))"
-                    @keydown.enter.prevent="submitProjectRename(project.id, displayProjectName(project))"
-                    @keydown.esc.prevent="renamingProjectId = null"
-                  />
-                  <template v-else>
-                    <div class="truncate text-sm font-medium text-foreground">
-                      {{ displayProjectName(project) }}
-                    </div>
-                    <div class="truncate text-xs text-muted-foreground">
-                      {{ t('sidebarProjectCount', { count: project.conversation_count || 0 }) }}
-                    </div>
-                  </template>
-                </div>
-              </button>
-
-              <button
-                v-if="!isCollapsed"
-                type="button"
-                class="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
-                @click.stop="openProjectMenuId = openProjectMenuId === project.id ? null : project.id"
-              >
-                <Ellipsis :size="16" />
-              </button>
-
-              <div
-                v-if="openProjectMenuId === project.id && !isCollapsed"
-                class="absolute right-3 top-12 z-20 w-40 overflow-hidden rounded-xl border border-border bg-popover shadow-soft"
-              >
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                  @click.stop="startProjectRename(project)"
-                >
-                  <Pencil :size="14" />
-                  {{ t('sidebarRename') }}
-                </button>
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
-                  @click.stop="openProjectMenuId = null; emit('delete-project', project.id)"
-                >
-                  <Trash2 :size="14" />
-                  {{ t('sidebarDelete') }}
-                </button>
+              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground">
+                <Ellipsis :size="18" />
               </div>
-            </div>
-          </div>
+              <div v-if="!isCollapsed" class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium text-foreground">
+                  {{ showMoreProjectsLabel }}
+                </div>
+                <div class="truncate text-xs text-muted-foreground">
+                  {{ t('sidebarAllProjectsDescription') }}
+                </div>
+              </div>
+            </button>
+          </template>
         </section>
 
         <section class="space-y-2">
@@ -501,5 +439,48 @@ const submitProjectCreate = () => {
         </section>
       </div>
     </div>
+
+    <ProjectCreateDialog
+      :is-open="isProjectCreateOpen"
+      :suggested-name="suggestedProjectName"
+      @close="closeProjectCreate"
+      @create="handleProjectCreate"
+    />
+
+    <ModalShell
+      :is-open="isProjectBrowserOpen"
+      :dialog-label="t('sidebarAllProjects')"
+      panel-class="max-w-2xl"
+      @close="isProjectBrowserOpen = false"
+    >
+      <div class="flex items-start justify-between gap-4 border-b border-border/80 bg-background/60 px-6 py-5 backdrop-blur">
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-base font-semibold text-foreground">
+            <Ellipsis :size="18" class="text-primary" />
+            {{ t('sidebarAllProjects') }}
+          </div>
+          <p class="max-w-2xl text-sm leading-6 text-muted-foreground">
+            {{ t('sidebarAllProjectsDescription') }}
+          </p>
+        </div>
+        <button
+          type="button"
+          class="inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          @click="isProjectBrowserOpen = false"
+        >
+          <X :size="18" />
+        </button>
+      </div>
+
+      <div class="scrollbar-hide flex-1 overflow-y-auto px-6 py-6">
+        <ProjectList
+          :projects="projects"
+          :current-project-id="currentProjectId"
+          @delete-project="emit('delete-project', $event)"
+          @rename-project="handleProjectRename"
+          @select-project="handleProjectSelect"
+        />
+      </div>
+    </ModalShell>
   </aside>
 </template>

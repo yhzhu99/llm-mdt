@@ -569,8 +569,12 @@ export function useMdtApp() {
     draftMessage.value = ''
   }
 
-  const newConversation = () => {
+  const goHome = () => {
     resetDraftState()
+  }
+
+  const newConversation = () => {
+    goHome()
   }
 
   const removeProjectArtifacts = async (projectId: string) => {
@@ -605,7 +609,7 @@ export function useMdtApp() {
       const created = await api.createProject(nextName)
       await loadProjects()
       currentProjectId.value = created.id
-      resetDraftState()
+      goHome()
     } catch (error) {
       console.error('Failed to create project', error)
     }
@@ -629,7 +633,7 @@ export function useMdtApp() {
 
       if (wasCurrentProject || !projects.value.some((project) => project.id === currentProjectId.value)) {
         currentProjectId.value = result.nextProjectId
-        resetDraftState()
+        goHome()
       }
 
       await loadConversations(currentProjectId.value)
@@ -689,7 +693,7 @@ export function useMdtApp() {
   const selectProject = (projectId: string) => {
     if (currentProjectId.value === projectId) return
     currentProjectId.value = projectId
-    resetDraftState()
+    goHome()
   }
 
   const ensureConversationForSend = async ({ activate = true }: { activate?: boolean } = {}) => {
@@ -1595,6 +1599,7 @@ export function useMdtApp() {
     currentProjectId,
     draftMessage,
     groupedConversations,
+    goHome,
     isLoading: hasRunningConversations,
     isRecoveringRuns: hasRecoveringConversations,
     isSettingsOpen,
