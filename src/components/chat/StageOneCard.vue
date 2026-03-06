@@ -11,8 +11,6 @@ interface StageOneResponse {
   model: string
   response: string
   reasoning_details?: string | null
-  reasoning_summary?: string | null
-  reasoning_visibility?: 'none' | 'summary' | 'details'
 }
 
 interface ModelStreamState {
@@ -57,15 +55,7 @@ const activeResponse = computed(
 )
 const activeStream = computed(() => (activeModel.value ? props.streamState?.[activeModel.value] : undefined))
 const responseText = computed(() => activeResponse.value?.response || activeStream.value?.response || '')
-const thinkingText = computed(
-  () => activeResponse.value?.reasoning_summary || activeResponse.value?.reasoning_details || activeStream.value?.thinking || '',
-)
-const reasoningHeading = computed(() =>
-  activeResponse.value?.reasoning_summary ? t('stageReasoningSummary') : t('stageThinking'),
-)
-const emptyReasoningText = computed(() =>
-  activeResponse.value ? t('stageNoVisibleReasoning') : t('stageNoThinking'),
-)
+const thinkingText = computed(() => activeResponse.value?.reasoning_details || activeStream.value?.thinking || '')
 
 const hasStartedMainOutput = (model: string) => {
   const finalized = props.responses.find((response) => response.model === model)?.response
@@ -258,14 +248,14 @@ const selectModel = (index: number) => {
 
       <div v-if="showThinking" class="rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-4">
         <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-          {{ reasoningHeading }}
+          {{ t('stageThinking') }}
         </div>
         <MarkdownRenderer
           v-if="thinkingText"
           :source="thinkingText"
           :class="cn(props.streamMeta?.[activeModel]?.status === 'running' && 'streaming-prose', 'prose-p:my-2 prose-headings:mt-4')"
         />
-        <div v-else class="text-sm text-muted-foreground">{{ emptyReasoningText }}</div>
+        <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
       </div>
     </div>
   </StageCard>

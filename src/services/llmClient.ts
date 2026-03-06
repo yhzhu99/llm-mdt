@@ -4,30 +4,36 @@ import type {
   ChatCompletionResult,
   ChatCompletionStreamEvent,
   ProviderSettings,
-  ReasoningVisibility,
 } from '@/types'
 
-type ProviderKind = 'openai' | 'zenmux' | 'generic'
-type RequestMode = 'chat-completions' | 'responses'
-type ModelFamily = 'openai-reasoning' | 'gemini' | 'deepseek-reasoner' | 'unknown'
+type RequestMode = 'responses' | 'chat-completions'
 
 interface RequestConfig {
   endpoint: string
   mode: RequestMode
-  provider: ProviderKind
-  modelFamily: ModelFamily
-  reasoningEffort: string | null
-  reasoningSummaryMode: string | null
 }
 
-interface ReasoningFields {
-  reasoning_details: string | null
-  reasoning_summary: string | null
-  reasoning_visibility: ReasoningVisibility
+class RequestError extends Error {
+  status: number
+  body: string
+
+  constructor(message: string, status = 0, body = '') {
+    super(message)
+    this.name = 'RequestError'
+    this.status = status
+    this.body = body
+  }
 }
 
-function createRequestError(message: string) {
-  return new Error(message)
+const DEFAULT_REASONING_EFFORT = 'high'
+const DEFAULT_REASONING_SUMMARY = 'detailed'
+
+function createRequestError(message: string, status = 0, body = '') {
+  return new RequestError(message, status, body)
+}
+
+function isRequestError(error: unknown): error is RequestError {
+  return error instanceof RequestError
 }
 
 function normalizeStructuredText(value: unknown): string {
@@ -130,15 +136,12 @@ function extractDetailedReasoningText(value: unknown) {
   return ''
 }
 
-function createReasoningFields(summary: string, details: string): ReasoningFields {
-  const normalizedSummary = summary.trim() || null
-  const normalizedDetails = details.trim() || null
+function mergeReasoningText(summary: string, details: string) {
+  const normalizedDetails = details.trim()
+  if (normalizedDetails) return normalizedDetails
 
-  return {
-    reasoning_summary: normalizedSummary,
-    reasoning_details: normalizedDetails,
-    reasoning_visibility: normalizedSummary ? 'summary' : normalizedDetails ? 'details' : 'none',
-  }
+  const normalizedSummary = summary.trim()
+  return normalizedSummary || ''
 }
 
 function normalizeReasoningValue(value: unknown) {
@@ -179,76 +182,6 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '')
 }
 
-function getProviderKind(baseUrl: string): ProviderKind {
-  try {
-    const host = new URL(baseUrl).host.toLowerCase()
-    if (host === 'api.openai.com' || host.endsWith('.openai.com')) return 'openai'
-    if (host === 'zenmux.ai' || host.endsWith('.zenmux.ai')) return 'zenmux'
-  } catch {
-    return 'generic'
-  }
-
-  return 'generic'
-}
-
-function normalizeModelName(model: string) {
-  const normalized = String(model || '').trim().toLowerCase()
-  const parts = normalized.split('/')
-  return parts[parts.length - 1] || normalized
-}
-
-function getModelFamily(model: string): ModelFamily {
-  const normalized = normalizeModelName(model)
-
-  if (
-    normalized.startsWith('gpt-5') ||
-    normalized.startsWith('o1') ||
-    normalized.startsWith('o3') ||
-    normalized.startsWith('o4')
-  ) {
-    return 'openai-reasoning'
-  }
-
-  if (normalized.includes('gemini')) {
-    return 'gemini'
-  }
-
-  if (normalized.includes('deepseek-reasoner')) {
-    return 'deepseek-reasoner'
-  }
-
-  return 'unknown'
-}
-
-function supportsResponsesApi(provider: ProviderKind, modelFamily: ModelFamily) {
-  if (provider === 'openai') return modelFamily === 'openai-reasoning'
-  if (provider === 'zenmux') return modelFamily === 'openai-reasoning' || modelFamily === 'gemini'
-  return false
-}
-
-function selectReasoningEffort(provider: ProviderKind, model: string, modelFamily: ModelFamily) {
-  if (provider === 'openai' && modelFamily === 'openai-reasoning') {
-    const normalized = normalizeModelName(model)
-    if (/^gpt-5\.(2|3|4)(?:$|-)/.test(normalized)) {
-      return 'xhigh'
-    }
-    return 'high'
-  }
-
-  if (provider === 'zenmux' && (modelFamily === 'openai-reasoning' || modelFamily === 'gemini')) {
-    return 'high'
-  }
-
-  return null
-}
-
-function selectReasoningSummaryMode(provider: ProviderKind, mode: RequestMode) {
-  if (mode !== 'responses') return null
-  if (provider === 'openai') return 'auto'
-  if (provider === 'zenmux') return 'detailed'
-  return null
-}
-
 function resolveEndpoint(baseUrl: string, mode: RequestMode) {
   const trimmed = trimTrailingSlash(String(baseUrl || '').trim())
 
@@ -265,19 +198,19 @@ function resolveEndpoint(baseUrl: string, mode: RequestMode) {
   return `${trimmed}/chat/completions`
 }
 
-function resolveRequestConfig(settings: ProviderSettings, model: string): RequestConfig {
-  const provider = getProviderKind(settings.baseUrl)
-  const modelFamily = getModelFamily(model)
-  const mode: RequestMode = supportsResponsesApi(provider, modelFamily) ? 'responses' : 'chat-completions'
+function createRequestConfigs(baseUrl: string): RequestConfig[] {
+  const candidates: RequestConfig[] = [
+    { mode: 'responses', endpoint: resolveEndpoint(baseUrl, 'responses') },
+    { mode: 'chat-completions', endpoint: resolveEndpoint(baseUrl, 'chat-completions') },
+  ]
 
-  return {
-    endpoint: resolveEndpoint(settings.baseUrl, mode),
-    mode,
-    provider,
-    modelFamily,
-    reasoningEffort: selectReasoningEffort(provider, model, modelFamily),
-    reasoningSummaryMode: selectReasoningSummaryMode(provider, mode),
-  }
+  const seen = new Set<string>()
+  return candidates.filter((candidate) => {
+    const key = `${candidate.mode}:${candidate.endpoint}`
+    if (!candidate.endpoint || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
 }
 
 function buildResponsesInput(messages: ChatCompletionOptions['messages']) {
@@ -300,17 +233,14 @@ function buildPayload(
     const payload: Record<string, unknown> = {
       model,
       input: buildResponsesInput(messages),
+      reasoning: {
+        effort: DEFAULT_REASONING_EFFORT,
+        summary: DEFAULT_REASONING_SUMMARY,
+      },
     }
 
     if (stream) {
       payload.stream = true
-    }
-
-    if (requestConfig.reasoningEffort || requestConfig.reasoningSummaryMode) {
-      payload.reasoning = {
-        ...(requestConfig.reasoningEffort ? { effort: requestConfig.reasoningEffort } : {}),
-        ...(requestConfig.reasoningSummaryMode ? { summary: requestConfig.reasoningSummaryMode } : {}),
-      }
     }
 
     return payload
@@ -319,14 +249,11 @@ function buildPayload(
   const payload: Record<string, unknown> = {
     model,
     messages,
+    reasoning_effort: DEFAULT_REASONING_EFFORT,
   }
 
   if (stream) {
     payload.stream = true
-  }
-
-  if (requestConfig.reasoningEffort) {
-    payload.reasoning_effort = requestConfig.reasoningEffort
   }
 
   return payload
@@ -347,7 +274,7 @@ function extractPayloadsFromBlock(block: string) {
   return trimmed ? [trimmed] : []
 }
 
-function extractChatReasoningFields(source: Record<string, unknown>): ReasoningFields {
+function extractUnifiedReasoningText(source: Record<string, unknown>) {
   const reasoningObject =
     source.reasoning && typeof source.reasoning === 'object' ? (source.reasoning as Record<string, unknown>) : null
 
@@ -359,22 +286,11 @@ function extractChatReasoningFields(source: Record<string, unknown>): ReasoningF
       (typeof source.reasoning === 'string' ? source.reasoning : reasoningObject?.content),
   )
 
-  return createReasoningFields(summary, details)
+  return mergeReasoningText(summary, details)
 }
 
 function extractReasoningDelta(delta: Record<string, unknown>) {
-  const reasoningObject =
-    delta.reasoning && typeof delta.reasoning === 'object' ? (delta.reasoning as Record<string, unknown>) : null
-
-  return (
-    extractSummaryText(delta.reasoning_summary ?? reasoningObject?.summary) ||
-    extractDetailedReasoningText(
-      delta.reasoning_details ??
-        delta.thinking ??
-        delta.reasoning_content ??
-        (typeof delta.reasoning === 'string' ? delta.reasoning : reasoningObject?.content),
-    )
-  )
+  return extractUnifiedReasoningText(delta)
 }
 
 function extractChoiceMessage(choice: Record<string, unknown>) {
@@ -382,14 +298,9 @@ function extractChoiceMessage(choice: Record<string, unknown>) {
 }
 
 function buildChatResponseObject(message: Record<string, unknown>, fallbackReasoning = ''): ChatCompletionResult {
-  const reasoning = extractChatReasoningFields(message)
-  const fallbackDetails = reasoning.reasoning_details || fallbackReasoning || null
-
   return {
     content: normalizeStructuredText(message.content),
-    reasoning_details: fallbackDetails,
-    reasoning_summary: reasoning.reasoning_summary,
-    reasoning_visibility: reasoning.reasoning_summary ? 'summary' : fallbackDetails ? 'details' : 'none',
+    reasoning_details: extractUnifiedReasoningText(message) || fallbackReasoning || null,
   }
 }
 
@@ -415,11 +326,10 @@ function parseResponsesResult(data: Record<string, unknown>): ChatCompletionResu
   const reasoningItems = output.filter((item) => item.type === 'reasoning')
   const summary = joinText(reasoningItems.map((item) => extractSummaryText(item.summary)))
   const details = joinText(reasoningItems.map((item) => extractDetailedReasoningText(item.content)))
-  const reasoning = createReasoningFields(summary, details)
 
   return {
     content,
-    ...reasoning,
+    reasoning_details: mergeReasoningText(summary, details) || null,
   }
 }
 
@@ -436,7 +346,8 @@ async function doFetch(url: string, settings: ProviderSettings, payload: Record<
     })
 
     if (!response.ok) {
-      throw createRequestError(await readErrorBody(response))
+      const errorBody = await readErrorBody(response)
+      throw createRequestError(errorBody, response.status, errorBody)
     }
 
     return response
@@ -445,24 +356,63 @@ async function doFetch(url: string, settings: ProviderSettings, payload: Record<
   }
 }
 
+function shouldFallbackToNextAttempt(error: unknown, hasNextAttempt: boolean) {
+  if (!hasNextAttempt) return false
+  if (!isRequestError(error)) return false
+
+  if ([400, 404, 405, 415, 422, 501].includes(error.status)) {
+    return true
+  }
+
+  const body = `${error.message}\n${error.body}`.toLowerCase()
+  return [
+    'responses',
+    'chat/completions',
+    'unsupported',
+    'unknown parameter',
+    'unknown field',
+    'unrecognized',
+    'not found',
+    'invalid input',
+  ].some((pattern) => body.includes(pattern))
+}
+
+function parseJsonResult(requestConfig: RequestConfig, data: Record<string, unknown>) {
+  if (requestConfig.mode === 'responses') {
+    return parseResponsesResult(data)
+  }
+
+  const message = ((data.choices as Array<{ message?: Record<string, unknown> }> | undefined) || [])[0]?.message ?? {}
+  return buildChatResponseObject(message)
+}
+
 export async function chatCompletion(
   settings: ProviderSettings,
   { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
 ) {
-  const requestConfig = resolveRequestConfig(settings, model)
-  const response = await doFetch(requestConfig.endpoint, settings, buildPayload(requestConfig, { model, messages, stream: false }), timeoutMs)
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: Record<string, unknown> }>
-    output?: unknown[]
-    output_text?: unknown
+  const requestConfigs = createRequestConfigs(settings.baseUrl)
+  let lastError: unknown = null
+
+  for (const [index, requestConfig] of requestConfigs.entries()) {
+    try {
+      const response = await doFetch(
+        requestConfig.endpoint,
+        settings,
+        buildPayload(requestConfig, { model, messages, stream: false }),
+        timeoutMs,
+      )
+      const data = (await response.json()) as Record<string, unknown>
+      return parseJsonResult(requestConfig, data)
+    } catch (error) {
+      lastError = error
+      if (shouldFallbackToNextAttempt(error, index < requestConfigs.length - 1)) {
+        continue
+      }
+      throw error
+    }
   }
 
-  if (requestConfig.mode === 'responses') {
-    return parseResponsesResult(data as Record<string, unknown>)
-  }
-
-  const message = data.choices?.[0]?.message ?? {}
-  return buildChatResponseObject(message)
+  throw (lastError instanceof Error ? lastError : createRequestError('Request failed'))
 }
 
 function extractResponsesEventDelta(payload: Record<string, unknown>) {
@@ -473,11 +423,7 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
   }
 
   if (type === 'response.reasoning_summary_text.delta' || type === 'response.reasoning_text.delta') {
-    return {
-      delta_type: 'reasoning' as const,
-      text: normalizeStructuredText(payload.delta),
-      reasoning_kind: type === 'response.reasoning_summary_text.delta' ? ('summary' as const) : ('details' as const),
-    }
+    return { delta_type: 'reasoning' as const, text: normalizeStructuredText(payload.delta) }
   }
 
   if (type === 'response.completed' && payload.response && typeof payload.response === 'object') {
@@ -486,8 +432,6 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
       delta_type: 'final' as const,
       content: parsed.content,
       reasoning_details: parsed.reasoning_details,
-      reasoning_summary: parsed.reasoning_summary,
-      reasoning_visibility: parsed.reasoning_visibility,
     }
   }
 
@@ -503,169 +447,157 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
   return null
 }
 
-export async function* chatCompletionStream(
-  settings: ProviderSettings,
-  { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
+async function* streamFromResponse(
+  requestConfig: RequestConfig,
+  response: Response,
 ): AsyncGenerator<ChatCompletionStreamEvent> {
-  const requestConfig = resolveRequestConfig(settings, model)
   let contentAcc = ''
   let reasoningAcc = ''
   let reasoningDetails: string | null = null
-  let reasoningSummary: string | null = null
-  let reasoningVisibility: ReasoningVisibility = 'none'
 
-  try {
-    const response = await doFetch(
-      requestConfig.endpoint,
-      settings,
-      buildPayload(requestConfig, { model, messages, stream: true }),
-      timeoutMs,
-    )
-
-    const contentType = response.headers.get('content-type') || ''
-    if (contentType.includes('application/json')) {
-      const data = (await response.json()) as {
-        choices?: Array<{ message?: Record<string, unknown> }>
-        output?: unknown[]
-        output_text?: unknown
-      }
-
-      const parsed =
-        requestConfig.mode === 'responses'
-          ? parseResponsesResult(data as Record<string, unknown>)
-          : buildChatResponseObject(data.choices?.[0]?.message ?? {})
-
-      yield {
-        delta_type: 'final',
-        content: parsed.content,
-        reasoning_details: parsed.reasoning_details,
-        reasoning_summary: parsed.reasoning_summary,
-        reasoning_visibility: parsed.reasoning_visibility,
-      }
-      return
+  const contentType = response.headers.get('content-type') || ''
+  if (contentType.includes('application/json')) {
+    const data = (await response.json()) as Record<string, unknown>
+    const parsed = parseJsonResult(requestConfig, data)
+    yield {
+      delta_type: 'final',
+      content: parsed.content,
+      reasoning_details: parsed.reasoning_details,
     }
+    return
+  }
 
-    if (!response.body) {
-      throw createRequestError('Streaming response body is empty')
-    }
+  if (!response.body) {
+    throw createRequestError('Streaming response body is empty')
+  }
 
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let isDone = false
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let isDone = false
 
-    while (!isDone) {
-      const { done, value } = await reader.read()
-      if (done) break
+  while (!isDone) {
+    const { done, value } = await reader.read()
+    if (done) break
 
-      buffer += decoder.decode(value, { stream: true })
-      const parts = buffer.split(/\r?\n\r?\n/)
-      buffer = parts.pop() ?? ''
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split(/\r?\n\r?\n/)
+    buffer = parts.pop() ?? ''
 
-      for (const part of parts) {
-        for (const payloadText of extractPayloadsFromBlock(part)) {
-          if (payloadText === '[DONE]') {
-            isDone = true
-            break
-          }
+    for (const part of parts) {
+      for (const payloadText of extractPayloadsFromBlock(part)) {
+        if (payloadText === '[DONE]') {
+          isDone = true
+          break
+        }
 
-          let payload: Record<string, unknown>
-          try {
-            payload = JSON.parse(payloadText) as Record<string, unknown>
-          } catch {
-            continue
-          }
+        let payload: Record<string, unknown>
+        try {
+          payload = JSON.parse(payloadText) as Record<string, unknown>
+        } catch {
+          continue
+        }
 
-          if (requestConfig.mode === 'responses') {
-            const parsedEvent = extractResponsesEventDelta(payload)
-            if (!parsedEvent) continue
+        if (requestConfig.mode === 'responses') {
+          const parsedEvent = extractResponsesEventDelta(payload)
+          if (!parsedEvent) continue
 
-            if (parsedEvent.delta_type === 'content') {
-              contentAcc += parsedEvent.text
-              yield parsedEvent
-            } else if (parsedEvent.delta_type === 'reasoning') {
-              reasoningAcc += parsedEvent.text
-              reasoningVisibility =
-                parsedEvent.reasoning_kind === 'summary'
-                  ? 'summary'
-                  : reasoningVisibility === 'summary'
-                    ? 'summary'
-                    : 'details'
-              yield parsedEvent
-            } else if (parsedEvent.delta_type === 'final') {
-              reasoningDetails = parsedEvent.reasoning_details
-              reasoningSummary = parsedEvent.reasoning_summary || null
-              reasoningVisibility = parsedEvent.reasoning_visibility || 'none'
-              if (!contentAcc && parsedEvent.content) {
-                contentAcc = parsedEvent.content
-              }
-            } else if (parsedEvent.delta_type === 'error') {
-              yield parsedEvent
-              return
+          if (parsedEvent.delta_type === 'content') {
+            contentAcc += parsedEvent.text
+            yield parsedEvent
+          } else if (parsedEvent.delta_type === 'reasoning') {
+            reasoningAcc += parsedEvent.text
+            yield parsedEvent
+          } else if (parsedEvent.delta_type === 'final') {
+            reasoningDetails = parsedEvent.reasoning_details
+            if (!contentAcc && parsedEvent.content) {
+              contentAcc = parsedEvent.content
             }
-
-            continue
+          } else if (parsedEvent.delta_type === 'error') {
+            yield parsedEvent
+            return
           }
 
-          const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0]
-          if (!choice) continue
+          continue
+        }
 
-          const delta = (choice.delta as Record<string, unknown> | undefined) ?? {}
-          const message = extractChoiceMessage(choice)
+        const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0]
+        if (!choice) continue
 
-          const contentDelta = normalizeStructuredText(delta.content)
-          if (contentDelta) {
-            contentAcc += contentDelta
-            yield { delta_type: 'content', text: contentDelta }
-          }
+        const delta = (choice.delta as Record<string, unknown> | undefined) ?? {}
+        const message = extractChoiceMessage(choice)
 
-          const reasoningDelta = extractReasoningDelta(delta)
-          if (reasoningDelta) {
-            reasoningAcc += reasoningDelta
-            yield { delta_type: 'reasoning', text: reasoningDelta }
-          }
+        const contentDelta = normalizeStructuredText(delta.content)
+        if (contentDelta) {
+          contentAcc += contentDelta
+          yield { delta_type: 'content', text: contentDelta }
+        }
 
-          const finalReasoning = extractChatReasoningFields(message)
-          if (finalReasoning.reasoning_details) {
-            reasoningDetails = finalReasoning.reasoning_details
-          }
-          if (finalReasoning.reasoning_summary) {
-            reasoningSummary = finalReasoning.reasoning_summary
-          }
-          if (finalReasoning.reasoning_visibility !== 'none') {
-            reasoningVisibility = finalReasoning.reasoning_visibility
-          }
+        const reasoningDelta = extractReasoningDelta(delta)
+        if (reasoningDelta) {
+          reasoningAcc += reasoningDelta
+          yield { delta_type: 'reasoning', text: reasoningDelta }
+        }
 
-          if (!contentDelta) {
-            const fullContent = normalizeStructuredText(message.content)
-            if (fullContent && !contentAcc) {
-              contentAcc = fullContent
-            }
+        const finalReasoning = extractUnifiedReasoningText(message)
+        if (finalReasoning) {
+          reasoningDetails = finalReasoning
+        }
+
+        if (!contentDelta) {
+          const fullContent = normalizeStructuredText(message.content)
+          if (fullContent && !contentAcc) {
+            contentAcc = fullContent
           }
         }
       }
     }
-  } catch (error) {
-    yield {
-      delta_type: 'error',
-      message: error instanceof Error ? error.message : String(error),
-    }
-    return
   }
 
   yield {
     delta_type: 'final',
     content: contentAcc,
-    reasoning_details: reasoningDetails || (reasoningVisibility === 'details' ? reasoningAcc || null : null),
-    reasoning_summary: reasoningSummary || (reasoningVisibility === 'summary' ? reasoningAcc || null : null),
-    reasoning_visibility:
-      reasoningVisibility !== 'none'
-        ? reasoningVisibility
-        : reasoningSummary
-          ? 'summary'
-          : reasoningDetails || reasoningAcc
-            ? 'details'
-            : 'none',
+    reasoning_details: reasoningDetails || reasoningAcc || null,
+  }
+}
+
+export async function* chatCompletionStream(
+  settings: ProviderSettings,
+  { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
+): AsyncGenerator<ChatCompletionStreamEvent> {
+  const requestConfigs = createRequestConfigs(settings.baseUrl)
+  let lastError: unknown = null
+
+  for (const [index, requestConfig] of requestConfigs.entries()) {
+    try {
+      const response = await doFetch(
+        requestConfig.endpoint,
+        settings,
+        buildPayload(requestConfig, { model, messages, stream: true }),
+        timeoutMs,
+      )
+
+      for await (const event of streamFromResponse(requestConfig, response)) {
+        yield event
+      }
+      return
+    } catch (error) {
+      lastError = error
+      if (shouldFallbackToNextAttempt(error, index < requestConfigs.length - 1)) {
+        continue
+      }
+
+      yield {
+        delta_type: 'error',
+        message: error instanceof Error ? error.message : String(error),
+      }
+      return
+    }
+  }
+
+  yield {
+    delta_type: 'error',
+    message: lastError instanceof Error ? lastError.message : String(lastError || 'Request failed'),
   }
 }
 
@@ -673,15 +605,16 @@ export const __private__ = {
   buildHeaders,
   buildPayload,
   buildChatResponseObject,
+  createRequestConfigs,
   extractPayloadsFromBlock,
   extractReasoningDelta,
   extractResponsesEventDelta,
-  getModelFamily,
+  mergeReasoningText,
   normalizeStructuredText,
   normalizeReasoningValue,
   parseResponsesResult,
   resolveEndpoint,
-  resolveRequestConfig,
+  shouldFallbackToNextAttempt,
 }
 
 export const llmClient: ChatCompletionClient = {

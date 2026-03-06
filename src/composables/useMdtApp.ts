@@ -907,8 +907,6 @@ export function useMdtApp() {
           model: runtimeConfig.value.chairman_model || 'chairman',
           response: message.stream.stage3.response || nextErrorMessage,
           reasoning_details: null,
-          reasoning_summary: null,
-          reasoning_visibility: 'none',
         },
         stream: {
           ...message.stream,

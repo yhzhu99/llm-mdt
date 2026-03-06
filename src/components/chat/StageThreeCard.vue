@@ -11,8 +11,6 @@ interface StageThreeResult {
   model: string
   response: string
   reasoning_details?: string | null
-  reasoning_summary?: string | null
-  reasoning_visibility?: 'none' | 'summary' | 'details'
 }
 
 interface StageThreeStreamState {
@@ -35,15 +33,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const showThinking = ref(false)
 const responseText = computed(() => props.finalResponse?.response || props.streamState?.response || '')
-const thinkingText = computed(
-  () => props.finalResponse?.reasoning_summary || props.finalResponse?.reasoning_details || props.streamState?.thinking || '',
-)
-const reasoningHeading = computed(() =>
-  props.finalResponse?.reasoning_summary ? t('stageReasoningSummary') : t('stageThinking'),
-)
-const emptyReasoningText = computed(() =>
-  props.finalResponse ? t('stageNoVisibleReasoning') : t('stageNoThinking'),
-)
+const thinkingText = computed(() => props.finalResponse?.reasoning_details || props.streamState?.thinking || '')
 const modelName = computed(() => props.finalResponse?.model || 'chairman')
 const hasStartedMainOutput = computed(() => Boolean(responseText.value))
 const shortModelName = computed(() => modelName.value.split('/')[1] || modelName.value)
@@ -155,14 +145,14 @@ const stageStatusBadgeClass = computed(() =>
 
       <div v-if="showThinking" class="rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-4">
         <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-          {{ reasoningHeading }}
+          {{ t('stageThinking') }}
         </div>
         <MarkdownRenderer
           v-if="thinkingText"
           :source="thinkingText"
           :class="cn(props.streamMeta?.status === 'running' && 'streaming-prose', 'prose-p:my-2 prose-headings:mt-4')"
         />
-        <div v-else class="text-sm text-muted-foreground">{{ emptyReasoningText }}</div>
+        <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
       </div>
     </div>
   </StageCard>

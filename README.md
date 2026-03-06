@@ -40,7 +40,7 @@ Each conversation is designed as a **single consultation**: one user prompt, fol
 - **Frontend-only MDT orchestration** with no runtime backend
 - **Anonymized peer review** to reduce model-name bias
 - **Streaming stage updates** for Stage 1, Stage 2, and Stage 3
-- **Automatic reasoning controls** that request the highest documented reasoning level for supported OpenAI / Gemini-compatible providers and surface reasoning summaries when available
+- **Automatic reasoning requests** that ask the model for visible thinking content when the provider supports it
 - **Local persistence** for chats, rankings, and trace metadata
 - **Provider configuration in the browser** for base URL, API key, council models, chairman model, and an optional dedicated title model
 - **Cloudflare Pages friendly** static deployment
@@ -90,7 +90,7 @@ Example base URLs:
 - `https://api.openai.com/v1`
 - any other OpenAI-compatible endpoint you control
 
-If a provider supports the Responses API, LLM MDT automatically switches to it for supported models so GPT-5-style reasoning summaries can be displayed. Otherwise it falls back to standard chat completions and shows any provider-returned reasoning details.
+LLM MDT will first try a Responses-style request with reasoning enabled, then automatically fall back to standard chat completions when needed.
 
 ## Local Storage Model
 
