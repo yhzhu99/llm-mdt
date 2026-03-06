@@ -692,7 +692,7 @@ export function useMdtApp() {
     resetDraftState()
   }
 
-  const ensureConversationForSend = async () => {
+  const ensureConversationForSend = async ({ activate = true }: { activate?: boolean } = {}) => {
     if (currentConversationId.value) {
       const cachedConversation = conversationCache.value[currentConversationId.value]
       if (cachedConversation) {
@@ -715,15 +715,17 @@ export function useMdtApp() {
 
     const conversation = await api.createConversationForProject(currentProjectId.value, t('conversationUntitled'))
     setConversationInCache(conversation)
-    currentConversationId.value = conversation.id
-    upsertConversationInSidebar({
-      id: conversation.id,
-      project_id: conversation.project_id,
-      created_at: conversation.created_at,
-      title: conversation.title,
-      message_count: conversation.messages.length,
-    })
-    await loadProjects()
+    if (activate) {
+      currentConversationId.value = conversation.id
+      upsertConversationInSidebar({
+        id: conversation.id,
+        project_id: conversation.project_id,
+        created_at: conversation.created_at,
+        title: conversation.title,
+        message_count: conversation.messages.length,
+      })
+      await loadProjects()
+    }
     return cloneValue(conversation)
   }
 
@@ -1404,9 +1406,12 @@ export function useMdtApp() {
     }
 
     let conversationForRequest: Conversation
+    const shouldActivateConversationAfterOptimisticSave = !currentConversationId.value
 
     try {
-      conversationForRequest = await ensureConversationForSend()
+      conversationForRequest = await ensureConversationForSend({
+        activate: !shouldActivateConversationAfterOptimisticSave,
+      })
     } catch (error) {
       console.error('Failed to create conversation', error)
       return
@@ -1434,6 +1439,11 @@ export function useMdtApp() {
     const assistantMessage = {
       ...createAssistantMessage(runtimeConfig.value.council_models),
       id: requestId,
+      loading: {
+        stage1: true,
+        stage2: false,
+        stage3: false,
+      },
     }
     const userMessage = createUserMessage(trimmedContent)
     const optimisticCreatedAt = conversationForRequest.created_at || new Date().toISOString()
@@ -1478,6 +1488,11 @@ export function useMdtApp() {
       title: optimisticTitle || t('conversationUntitled'),
       message_count: existingMessageCount + 2,
     })
+
+    if (shouldActivateConversationAfterOptimisticSave) {
+      currentConversationId.value = conversationIdForRequest
+      await loadProjects()
+    }
 
     const startedAt = new Date().toISOString()
     const persistedRun = buildPersistedRun({
