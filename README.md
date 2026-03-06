@@ -63,11 +63,6 @@ npm install
 
 ### 2. Start the app
 
-```bash
-./start.sh
-```
-
-Or run Vite directly:
 
 ```bash
 npm run dev
