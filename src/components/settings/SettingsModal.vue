@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { AlertTriangle, KeyRound, Server, Settings2, ShieldAlert, X } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
@@ -26,6 +26,10 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const dialogRef = ref<HTMLElement | null>(null)
+const firstFieldRef = ref<HTMLInputElement | null>(null)
+let previousFocusedElement: HTMLElement | null = null
+
 const formatModelList = (models?: string[] | string) =>
   Array.isArray(models) ? models.join('\n') : String(models || '')
 
@@ -92,17 +96,93 @@ const handleSubmit = () => {
     extraHeaders: parseHeaderLines(formState.value.extraHeadersText),
   })
 }
+
+const getFocusableElements = () => {
+  const dialog = dialogRef.value
+  if (!dialog) return [] as HTMLElement[]
+
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>(
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    ),
+  ).filter((element) => !element.hasAttribute('aria-hidden'))
+}
+
+const handleKeydown = (event: KeyboardEvent) => {
+  if (!props.isOpen) return
+
+  if (event.key === 'Escape') {
+    event.preventDefault()
+    return
+  }
+
+  if (event.key !== 'Tab') return
+
+  const focusable = getFocusableElements()
+  if (focusable.length === 0) {
+    event.preventDefault()
+    return
+  }
+
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  const activeElement = document.activeElement as HTMLElement | null
+
+  if (event.shiftKey && activeElement === first) {
+    event.preventDefault()
+    last?.focus()
+    return
+  }
+
+  if (!event.shiftKey && activeElement === last) {
+    event.preventDefault()
+    first?.focus()
+  }
+}
+
+watch(
+  () => props.isOpen,
+  async (isOpen) => {
+    if (typeof document === 'undefined') return
+
+    if (isOpen) {
+      previousFocusedElement = document.activeElement as HTMLElement | null
+      document.body.style.overflow = 'hidden'
+      await nextTick()
+      firstFieldRef.value?.focus()
+      return
+    }
+
+    document.body.style.overflow = ''
+    previousFocusedElement?.focus?.()
+    previousFocusedElement = null
+  },
+)
+
+onBeforeUnmount(() => {
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = ''
+  }
+})
 </script>
 
 <template>
   <Teleport to="body">
     <div
       v-if="isOpen"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm"
-      @click.self="emit('close')"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-md"
+      @click.prevent
+      @keydown.capture="handleKeydown"
+      @mousedown.self.prevent
     >
-      <div class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.5rem] border border-border bg-card shadow-soft">
-        <div class="flex items-start justify-between gap-4 border-b border-border/80 px-6 py-5">
+      <div
+        ref="dialogRef"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="t('settingsTitle')"
+        class="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-[1.75rem] border border-border/80 bg-card shadow-soft"
+      >
+        <div class="flex items-start justify-between gap-4 border-b border-border/80 bg-background/60 px-6 py-5 backdrop-blur">
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-base font-semibold text-foreground">
               <Settings2 :size="18" class="text-primary" />
@@ -154,6 +234,7 @@ const handleSubmit = () => {
                 {{ t('settingsBaseUrl') }}
               </span>
               <input
+                ref="firstFieldRef"
                 v-model="formState.baseUrl"
                 type="url"
                 placeholder="https://openrouter.ai/api/v1/chat/completions"

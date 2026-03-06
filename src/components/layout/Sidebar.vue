@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   ChevronLeft,
   ChevronRight,
@@ -38,12 +38,14 @@ const props = withDefaults(
     groupedConversations?: Record<string, ConversationSummary[]>
     currentConversationId?: string | null
     currentProjectId?: string | null
+    suggestedProjectName?: string
     isCollapsed?: boolean
   }>(),
   {
     groupedConversations: () => ({}),
     currentConversationId: null,
     currentProjectId: null,
+    suggestedProjectName: '',
     isCollapsed: false,
   },
 )
@@ -54,7 +56,7 @@ const emit = defineEmits<{
   (event: 'delete-conversation', id: string): void
   (event: 'rename-conversation', id: string, title: string): void
   (event: 'select-project', id: string): void
-  (event: 'create-project'): void
+  (event: 'create-project', title: string): void
   (event: 'delete-project', id: string): void
   (event: 'rename-project', id: string, title: string): void
   (event: 'toggle-collapsed'): void
@@ -68,13 +70,13 @@ const renamingProjectId = ref<string | null>(null)
 const renamingConversationId = ref<string | null>(null)
 const draftProjectName = ref('')
 const draftConversationTitle = ref('')
+const isCreatingProject = ref(false)
+const draftNewProjectName = ref('')
+const newProjectInputRef = ref<HTMLInputElement | null>(null)
 
 const visibleGroups = computed(() => {
   const groupedEntries = Object.entries(props.groupedConversations || {})
-    .map(([group, items]) => [
-      group,
-      items.filter((conversation) => (conversation.message_count ?? 0) > 0),
-    ] as const)
+    .map(([group, items]) => [group, items] as const)
     .filter(([, items]) => items.length > 0)
 
   return groupedEntries
@@ -123,6 +125,31 @@ const submitConversationRename = (conversationId: string, fallbackTitle: string)
 }
 
 const projectInitial = (project: ProjectSummary) => displayProjectName(project).slice(0, 1).toUpperCase()
+
+const openProjectCreate = async () => {
+  if (props.isCollapsed) {
+    emit('toggle-collapsed')
+    await nextTick()
+  }
+
+  isCreatingProject.value = true
+  draftNewProjectName.value = props.suggestedProjectName || ''
+  await nextTick()
+  newProjectInputRef.value?.focus()
+  newProjectInputRef.value?.select()
+}
+
+const cancelProjectCreate = () => {
+  isCreatingProject.value = false
+  draftNewProjectName.value = ''
+}
+
+const submitProjectCreate = () => {
+  const title = draftNewProjectName.value.trim()
+  if (!title) return
+  emit('create-project', title)
+  cancelProjectCreate()
+}
 </script>
 
 <template>
@@ -157,7 +184,7 @@ const projectInitial = (project: ProjectSummary) => displayProjectName(project).
       </div>
 
       <div class="mt-4 flex flex-col gap-2">
-        <Button class="w-full" @click="emit('create-project')">
+        <Button class="w-full" @click="openProjectCreate">
           <FolderPlus :size="16" />
           <span v-if="!isCollapsed">{{ t('sidebarNewProject') }}</span>
         </Button>
@@ -165,6 +192,28 @@ const projectInitial = (project: ProjectSummary) => displayProjectName(project).
           <Plus :size="16" />
           <span v-if="!isCollapsed">{{ t('sidebarNewConversation') }}</span>
         </Button>
+      </div>
+
+      <div v-if="isCreatingProject && !isCollapsed" class="mt-3 rounded-2xl border border-border/80 bg-background/90 p-3 shadow-sm">
+        <label class="block space-y-2">
+          <span class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+            {{ t('projectCreateName') }}
+          </span>
+          <input
+            ref="newProjectInputRef"
+            v-model="draftNewProjectName"
+            class="w-full rounded-xl border border-input bg-background px-3 py-2.5 text-sm text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+            :placeholder="t('projectCreatePlaceholder')"
+            @keydown.enter.prevent="submitProjectCreate"
+            @keydown.esc.prevent="cancelProjectCreate"
+          />
+        </label>
+        <div class="mt-3 flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" @click="cancelProjectCreate">{{ t('settingsCancel') }}</Button>
+          <Button size="sm" :disabled="!draftNewProjectName.trim()" @click="submitProjectCreate">
+            {{ t('projectCreateConfirm') }}
+          </Button>
+        </div>
       </div>
     </div>
 

@@ -108,6 +108,7 @@ export function useMdtApp() {
   const currentProject = computed(
     () => projects.value.find((project) => project.id === currentProjectId.value) || null,
   )
+  const suggestedProjectName = computed(() => buildProjectName())
   const runtimeConfig = computed<RuntimeConfig>(() => toRuntimeConfig(providerSettings.value))
   const groupedConversations = computed(() => groupConversationsByDate(conversations.value, locale.value))
   const providerConfigured = computed(() => runtimeConfig.value.configured)
@@ -288,9 +289,12 @@ export function useMdtApp() {
     resetDraftState()
   }
 
-  const createProject = async () => {
+  const createProject = async (name: string) => {
+    const nextName = String(name || '').trim()
+    if (!nextName) return
+
     try {
-      const created = await api.createProject(buildProjectName())
+      const created = await api.createProject(nextName)
       await loadProjects()
       currentProjectId.value = created.id
       resetDraftState()
@@ -784,6 +788,7 @@ export function useMdtApp() {
     providerStatus,
     providerStatusText,
     runtimeConfig,
+    suggestedProjectName,
     settingsError,
     clearSettings,
     closeSettings,

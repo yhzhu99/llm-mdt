@@ -22,6 +22,7 @@ const {
   providerStatus,
   providerStatusText,
   runtimeConfig,
+  suggestedProjectName,
   createProject,
   settingsError,
   clearSettings,
@@ -56,6 +57,7 @@ const topBarTitle = computed(() => {
       :grouped-conversations="groupedConversations"
       :current-conversation-id="currentConversationId"
       :current-project-id="currentProjectId"
+      :suggested-project-name="suggestedProjectName"
       :is-collapsed="isSidebarCollapsed"
       @create-project="createProject"
       @delete-conversation="deleteConversation"
