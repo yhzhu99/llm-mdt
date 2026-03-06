@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "composite": true,
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "allowSyntheticDefaultImports": true,
+    "types": ["node"]
+  },
+  "include": [
+    "vite.config.ts",
+    "eslint.config.js",
+    "tailwind.config.js",
+    "postcss.config.js"
+  ]
+}

@@ -1,30 +1,47 @@
 import js from '@eslint/js'
 import globals from 'globals'
-import reactHooks from 'eslint-plugin-react-hooks'
-import reactRefresh from 'eslint-plugin-react-refresh'
-import { defineConfig, globalIgnores } from 'eslint/config'
+import pluginVue from 'eslint-plugin-vue'
+import tseslint from 'typescript-eslint'
+import vueParser from 'vue-eslint-parser'
 
-export default defineConfig([
-  globalIgnores(['dist']),
+export default tseslint.config(
   {
-    files: ['**/*.{js,jsx}'],
-    extends: [
-      js.configs.recommended,
-      reactHooks.configs.flat.recommended,
-      reactRefresh.configs.vite,
-    ],
+    ignores: ['dist', 'coverage', 'node_modules'],
+  },
+  {
+    ...js.configs.recommended,
+    files: ['**/*.{js,mjs,cjs,ts,mts,cts,vue}'],
     languageOptions: {
-      ecmaVersion: 2020,
-      globals: globals.browser,
+      globals: {
+        ...globals.browser,
+        ...globals.node,
+      },
+    },
+  },
+  ...tseslint.configs.recommended,
+  ...pluginVue.configs['flat/recommended'],
+  {
+    files: ['**/*.vue'],
+    languageOptions: {
+      parser: vueParser,
       parserOptions: {
+        parser: tseslint.parser,
         ecmaVersion: 'latest',
-        ecmaFeatures: { jsx: true },
         sourceType: 'module',
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
-      'react-hooks/set-state-in-effect': 'off',
+      'vue/multi-word-component-names': 'off',
     },
   },
-])
+  {
+    files: ['**/*.{ts,tsx}'],
+    languageOptions: {
+      parser: tseslint.parser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        sourceType: 'module',
+      },
+    },
+  },
+)
