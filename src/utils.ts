@@ -21,15 +21,11 @@ export function normalizeReasoningText(value: unknown) {
 }
 
 export function pickBestReasoningText(...values: Array<unknown>) {
-  let best = ''
-
   for (const value of values) {
     const normalized = normalizeReasoningText(value)
     if (!normalized) continue
-    if (!best || normalized.length > best.length) {
-      best = normalized
-    }
+    return normalized
   }
 
-  return best
+  return ''
 }

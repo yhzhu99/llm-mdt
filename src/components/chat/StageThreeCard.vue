@@ -170,13 +170,6 @@ const stageStatusBadgeClass = computed(() =>
         </div>
       </div>
 
-      <div
-        v-if="reasoningNotice"
-        class="rounded-[1.1rem] border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-700"
-      >
-        {{ reasoningNotice }} {{ t('stageTraceHint') }}
-      </div>
-
       <div v-if="showThinking" class="rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-4">
         <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
           {{ t('stageThinking') }}

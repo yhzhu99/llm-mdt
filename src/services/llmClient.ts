@@ -43,7 +43,7 @@ class RequestError extends Error {
 }
 
 const DEFAULT_REASONING_EFFORT = 'high'
-const DEFAULT_REASONING_SUMMARY = 'detailed'
+const DEFAULT_REASONING_SUMMARY = 'auto'
 
 function createRequestError(message: string, status = 0, body = '') {
   return new RequestError(message, status, body)
@@ -238,8 +238,7 @@ function resolveEndpoint(baseUrl: string, mode: RequestMode) {
 }
 
 function createRequestConfigs(baseUrl: string, preferredMode: ProviderRequestMode = 'auto'): RequestConfig[] {
-  const orderedModes: RequestMode[] =
-    preferredMode === 'auto' ? ['responses', 'chat-completions'] : [preferredMode]
+  const orderedModes: RequestMode[] = preferredMode === 'auto' ? ['responses'] : [preferredMode]
   const candidates = orderedModes.map((mode) => ({ mode, endpoint: resolveEndpoint(baseUrl, mode) }))
 
   const seen = new Set<string>()
