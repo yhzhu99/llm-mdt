@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { Activity, Plus, Settings2 } from 'lucide-vue-next'
+import { Activity, Languages, Plus, Settings2 } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
+import type { AppLocale } from '@/types'
 import Button from '@/components/ui/button/Button.vue'
 import { cn } from '@/utils'
 
@@ -10,16 +12,19 @@ withDefaults(
     statusText?: string
   }>(),
   {
-    title: 'LLM MDT',
+    title: '',
     status: 'unconfigured',
     statusText: '',
   },
 )
 
-defineEmits<{
+const emit = defineEmits<{
   (event: 'new-conversation'): void
   (event: 'open-settings'): void
+  (event: 'change-locale', value: AppLocale): void
 }>()
+
+const { locale, t } = useI18n()
 </script>
 
 <template>
@@ -39,7 +44,7 @@ defineEmits<{
           <Activity :size="18" />
         </div>
         <div class="min-w-0">
-          <div class="truncate text-base font-semibold text-foreground">{{ title }}</div>
+          <div class="truncate text-base font-semibold text-foreground">{{ title || t('appNamePrimary') }}</div>
           <div class="truncate text-sm text-muted-foreground">
             {{ statusText || status }}
           </div>
@@ -47,13 +52,44 @@ defineEmits<{
       </div>
 
       <div class="flex items-center gap-2">
+        <div class="hidden items-center gap-1 rounded-xl border border-border/80 bg-card/80 p-1 sm:flex">
+          <span class="inline-flex items-center gap-1 px-2 text-xs font-medium text-muted-foreground">
+            <Languages :size="14" />
+            {{ t('topBarLanguage') }}
+          </span>
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+            :class="
+              locale === 'zh-CN'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            "
+            @click="emit('change-locale', 'zh-CN')"
+          >
+            {{ t('localeZh') }}
+          </button>
+          <button
+            type="button"
+            class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+            :class="
+              locale === 'en'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:bg-accent hover:text-accent-foreground'
+            "
+            @click="emit('change-locale', 'en')"
+          >
+            {{ t('localeEn') }}
+          </button>
+        </div>
+
         <Button variant="ghost" size="sm" @click="$emit('open-settings')">
           <Settings2 :size="16" />
-          <span class="hidden sm:inline">Settings</span>
+          <span class="hidden sm:inline">{{ t('topBarSettings') }}</span>
         </Button>
         <Button size="sm" @click="$emit('new-conversation')">
           <Plus :size="16" />
-          <span class="hidden sm:inline">New chat</span>
+          <span class="hidden sm:inline">{{ t('topBarNewChat') }}</span>
         </Button>
       </div>
     </div>

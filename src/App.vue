@@ -9,26 +9,34 @@ const {
   conversations,
   currentConversation,
   currentConversationId,
+  currentProjectId,
   draftMessage,
   groupedConversations,
   isLoading,
   isSettingsOpen,
   isSidebarCollapsed,
+  projects,
   providerConfigured,
   providerSettings,
   providerStatus,
   providerStatusText,
   runtimeConfig,
+  createProject,
   settingsError,
   clearSettings,
   closeSettings,
   deleteConversation,
+  deleteProject,
   newConversation,
   openSettings,
   renameConversation,
+  renameProject,
   saveSettings,
   selectConversation,
+  selectProject,
   sendMessage,
+  setLocale,
+  t,
   toggleSidebar,
 } = useMdtApp()
 </script>
@@ -36,22 +44,29 @@ const {
 <template>
   <div class="flex h-screen overflow-hidden bg-background">
     <Sidebar
+      :projects="projects"
       :conversations="conversations"
       :grouped-conversations="groupedConversations"
       :current-conversation-id="currentConversationId"
+      :current-project-id="currentProjectId"
       :is-collapsed="isSidebarCollapsed"
-      @delete="deleteConversation"
-      @new="newConversation"
-      @rename="renameConversation"
-      @select="selectConversation"
+      @create-project="createProject"
+      @delete-conversation="deleteConversation"
+      @delete-project="deleteProject"
+      @new-conversation="newConversation"
+      @rename-conversation="renameConversation"
+      @rename-project="renameProject"
+      @select-conversation="selectConversation"
+      @select-project="selectProject"
       @toggle-collapsed="toggleSidebar"
     />
 
     <div class="flex min-w-0 flex-1 flex-col">
       <TopBar
-        :title="currentConversation?.title || 'LLM MDT'"
+        :title="currentConversation?.title || t('appNamePrimary')"
         :status="providerStatus"
         :status-text="providerStatusText"
+        @change-locale="setLocale"
         @new-conversation="newConversation"
         @open-settings="openSettings"
       />
