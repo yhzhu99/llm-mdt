@@ -2,6 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { LoaderCircle, MessageSquareText, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
+import { cn } from '@/utils'
 import ChatComposer from './ChatComposer.vue'
 import ConsultationOverview from './ConsultationOverview.vue'
 import CopyButton from '@/components/common/CopyButton.vue'
@@ -86,16 +87,20 @@ const props = withDefaults(
   defineProps<{
     conversation?: ConversationDetail | null
     draft?: string
+    canRetryRecovery?: boolean
     isLoading?: boolean
     isRecovering?: boolean
+    recoveryError?: string
     runtimeConfig?: RuntimeConfigLike | null
     providerConfigured?: boolean
   }>(),
   {
     conversation: null,
     draft: '',
+    canRetryRecovery: false,
     isLoading: false,
     isRecovering: false,
+    recoveryError: '',
     runtimeConfig: null,
     providerConfigured: false,
   },
@@ -105,6 +110,7 @@ const emit = defineEmits<{
   (event: 'update:draft', value: string): void
   (event: 'send', value: string): void
   (event: 'open-settings'): void
+  (event: 'retry-recovery'): void
 }>()
 
 const { t } = useI18n()
@@ -214,11 +220,36 @@ const isAssistantStreaming = (message: AssistantMessage) =>
 
       <div v-else class="mx-auto flex w-full max-w-6xl flex-col gap-6">
         <div
-          v-if="isRecovering"
-          class="flex items-center gap-3 rounded-2xl border border-primary/20 bg-primary/5 px-4 py-3 text-sm text-primary"
+          v-if="isRecovering || canRetryRecovery"
+          :class="
+            cn(
+              'flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm',
+              isRecovering
+                ? 'border-primary/20 bg-primary/5 text-primary'
+                : 'border-destructive/20 bg-destructive/5 text-destructive',
+            )
+          "
         >
-          <LoaderCircle :size="16" class="animate-spin" />
-          <span>{{ t('conversationRecoveryBanner') }}</span>
+          <div class="flex min-w-0 items-center gap-3">
+            <LoaderCircle v-if="isRecovering" :size="16" class="animate-spin" />
+            <MessageSquareText v-else :size="16" />
+            <div class="min-w-0">
+              <div>{{ isRecovering ? t('conversationRecoveryBanner') : t('conversationRecoveryFailed') }}</div>
+              <div v-if="recoveryError" class="truncate text-xs opacity-80">
+                {{ recoveryError }}
+              </div>
+            </div>
+          </div>
+
+          <button
+            v-if="canRetryRecovery"
+            type="button"
+            class="inline-flex shrink-0 items-center rounded-xl border border-current/20 px-3 py-1.5 text-xs font-medium transition-opacity hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="isRecovering"
+            @click="emit('retry-recovery')"
+          >
+            {{ t('conversationRecoveryRetry') }}
+          </button>
         </div>
 
         <div

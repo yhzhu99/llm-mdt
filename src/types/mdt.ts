@@ -190,6 +190,7 @@ export interface PersistedConversationRun {
   updatedAt: string
   stage: ConversationRunStage
   status: Extract<ConversationRunStatus, 'running' | 'complete' | 'error'>
+  lastError?: string
 }
 
 export interface AssistantMessageRecord {

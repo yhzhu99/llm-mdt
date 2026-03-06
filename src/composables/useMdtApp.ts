@@ -183,6 +183,9 @@ export function useMdtApp() {
   const currentConversation = computed(() =>
     currentConversationId.value ? conversationCache.value[currentConversationId.value] || null : null,
   )
+  const currentPersistedRun = computed(() =>
+    currentConversationId.value ? persistedRuns.value[currentConversationId.value] || null : null,
+  )
   const currentConversationRunState = computed(() =>
     currentConversationId.value
       ? conversationRunStates.value[currentConversationId.value] || createIdleRunState()
@@ -190,6 +193,14 @@ export function useMdtApp() {
   )
   const currentConversationRunning = computed(() => currentConversationRunState.value.status === 'running')
   const currentConversationRecovering = computed(() => Boolean(currentConversationRunState.value.isRecovering))
+  const currentConversationCanRetryRecovery = computed(
+    () => Boolean(currentPersistedRun.value) && currentConversationRunState.value.status === 'error',
+  )
+  const currentConversationRecoveryError = computed(() =>
+    currentConversationRunState.value.status === 'error'
+      ? currentConversationRunState.value.lastError || currentPersistedRun.value?.lastError || ''
+      : '',
+  )
   const hasRunningConversations = computed(() =>
     Object.values(conversationRunStates.value).some((state) => state.status === 'running'),
   )
@@ -353,10 +364,20 @@ export function useMdtApp() {
     const next: PersistedConversationRun = {
       ...current,
       ...updates,
-      updatedAt: new Date().toISOString(),
+      updatedAt: String(updates.updatedAt || new Date().toISOString()),
     }
     cachePersistedRun(next)
     void api.saveConversationRun(next)
+  }
+
+  const deletePersistedRunIfSettled = async (conversationId: string) => {
+    const persistedRun = persistedRuns.value[conversationId]
+    if (!persistedRun) return
+    if (getRunState(conversationId).status !== 'complete') return
+
+    await deletePersistedRun(conversationId).catch((error) => {
+      console.error('Failed to clear persisted run', error)
+    })
   }
 
   const loadProjects = async () => {
@@ -736,6 +757,7 @@ export function useMdtApp() {
     updatedAt: startedAt,
     stage: 'stage1',
     status: 'running',
+    lastError: '',
   })
 
   const rehydrateRunState = (run: PersistedConversationRun) => {
@@ -747,7 +769,7 @@ export function useMdtApp() {
       startedAt: run.startedAt,
       completedAt: run.status === 'running' ? null : run.updatedAt,
       lastActivityAt: run.updatedAt,
-      lastError: current.lastError,
+      lastError: run.lastError || current.lastError || '',
       hasUnreadUpdate: currentConversationId.value === run.conversationId ? false : true,
       isRecovering: run.status === 'running',
     }))
@@ -827,23 +849,25 @@ export function useMdtApp() {
         const state = getRunState(conversationId)
         if (state.status === 'running') {
           const now = new Date().toISOString()
+          const errorMessage = state.lastError || t('orchestratorRunFailed')
           updateConversationRunState(conversationId, (current) => ({
             ...current,
             status: 'error',
             completedAt: now,
             lastActivityAt: now,
-            lastError: current.lastError || t('orchestratorRunFailed'),
+            lastError: errorMessage,
             hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
             isRecovering: false,
           }))
+          syncPersistedRunProgress(conversationId, requestId, {
+            status: 'error',
+            updatedAt: now,
+            lastError: errorMessage,
+          })
         }
       }
 
-      if (persistedRuns.value[conversationId]) {
-        await deletePersistedRun(conversationId).catch((error) => {
-          console.error('Failed to clear persisted run', error)
-        })
-      }
+      await deletePersistedRunIfSettled(conversationId)
     }
   }
 
@@ -1146,6 +1170,10 @@ export function useMdtApp() {
                 lastError: errorMessage,
                 completedAt: new Date().toISOString(),
               })
+              syncPersistedRunProgress(conversationId, requestId, {
+                status: 'error',
+                lastError: errorMessage,
+              })
               break
             }
             case 'stage3_complete': {
@@ -1195,6 +1223,12 @@ export function useMdtApp() {
                 hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
                 isRecovering: false,
               }))
+              syncPersistedRunProgress(conversationId, requestId, {
+                status: 'complete',
+                updatedAt: now,
+                stage: 'stage3',
+                lastError: '',
+              })
               if (getRunState(conversationId).status !== 'error') {
                 lastProviderError.value = ''
               }
@@ -1214,6 +1248,11 @@ export function useMdtApp() {
                 hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
                 isRecovering: false,
               }))
+              syncPersistedRunProgress(conversationId, requestId, {
+                status: 'error',
+                updatedAt: now,
+                lastError: errorMessage,
+              })
               break
             }
           }
@@ -1240,17 +1279,27 @@ export function useMdtApp() {
         hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
         isRecovering: false,
       }))
+      syncPersistedRunProgress(conversationId, requestId, {
+        status: 'error',
+        updatedAt: now,
+        lastError: errorMessage,
+      })
     } finally {
       await syncConversationAfterRun(conversationId, projectId, requestId)
     }
   }
 
-  const resumePersistedRuns = async () => {
+  const resumePersistedRuns = async (targetConversationIds?: string[], options?: { includeErrored?: boolean }) => {
     if (!hasHydratedPersistedRuns.value || !providerConfigured.value || isResumingPersistedRuns.value) {
       return
     }
 
-    const recoverableRuns = Object.values(persistedRuns.value).filter((run) => run.status === 'running')
+    const recoverableRuns = Object.values(persistedRuns.value).filter((run) => {
+      const isTargeted = !targetConversationIds || targetConversationIds.includes(run.conversationId)
+      const isRecoverableStatus =
+        run.status === 'running' || (options?.includeErrored ? run.status === 'error' : false)
+      return isTargeted && isRecoverableStatus
+    })
     if (recoverableRuns.length === 0) return
 
     isResumingPersistedRuns.value = true
@@ -1305,6 +1354,42 @@ export function useMdtApp() {
     } finally {
       isResumingPersistedRuns.value = false
     }
+  }
+
+  const retryConversationRecovery = async (conversationId = currentConversationId.value) => {
+    if (!conversationId) return
+
+    const persistedRun = persistedRuns.value[conversationId]
+    if (!persistedRun) return
+    if (getRunState(conversationId).status === 'running') return
+
+    if (!providerConfigured.value) {
+      openSettings()
+      return
+    }
+
+    const now = new Date().toISOString()
+    await savePersistedRun({
+      ...persistedRun,
+      status: 'running',
+      updatedAt: now,
+      lastError: '',
+    })
+
+    updateConversationRunState(conversationId, (state) => ({
+      ...state,
+      requestId: persistedRun.requestId,
+      status: 'running',
+      stage: persistedRun.stage || 'stage1',
+      startedAt: persistedRun.startedAt,
+      completedAt: null,
+      lastActivityAt: now,
+      lastError: '',
+      hasUnreadUpdate: false,
+      isRecovering: true,
+    }))
+
+    await resumePersistedRuns([conversationId], { includeErrored: true })
   }
 
   const sendMessage = async (content: string) => {
@@ -1480,7 +1565,9 @@ export function useMdtApp() {
     conversations,
     conversationRunStates,
     currentConversation,
+    currentConversationCanRetryRecovery,
     currentConversationId,
+    currentConversationRecoveryError,
     currentConversationRecovering,
     currentConversationRunState,
     currentConversationRunning,
@@ -1512,6 +1599,7 @@ export function useMdtApp() {
     openSettings,
     renameConversation,
     renameProject,
+    retryConversationRecovery,
     saveSettings,
     selectConversation,
     selectProject,

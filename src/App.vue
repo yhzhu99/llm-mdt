@@ -10,7 +10,9 @@ const {
   conversations,
   conversationRunStates,
   currentConversation,
+  currentConversationCanRetryRecovery,
   currentConversationId,
+  currentConversationRecoveryError,
   currentConversationRecovering,
   currentConversationRunning,
   currentProjectId,
@@ -35,6 +37,7 @@ const {
   openSettings,
   renameConversation,
   renameProject,
+  retryConversationRecovery,
   saveSettings,
   selectConversation,
   selectProject,
@@ -86,11 +89,14 @@ const topBarTitle = computed(() => {
       <ChatSurface
         v-model:draft="draftMessage"
         :conversation="currentConversation"
+        :can-retry-recovery="currentConversationCanRetryRecovery"
         :is-loading="currentConversationRunning"
         :is-recovering="currentConversationRecovering"
+        :recovery-error="currentConversationRecoveryError"
         :provider-configured="providerConfigured"
         :runtime-config="runtimeConfig"
         @open-settings="openSettings"
+        @retry-recovery="retryConversationRecovery"
         @send="sendMessage"
       />
     </div>
