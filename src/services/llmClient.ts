@@ -456,9 +456,8 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
   }
 
   if (
-    type === 'response.reasoning_summary_text.delta' ||
-    type === 'response.reasoning_text.delta' ||
-    type === 'response.reasoning_summary_part.added'
+    type === 'response.reasoning_summary_part.added' ||
+    (type.startsWith('response.reasoning') && type.endsWith('.delta'))
   ) {
     return {
       delta_type: 'reasoning' as const,
@@ -469,9 +468,8 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
   }
 
   if (
-    type === 'response.reasoning_summary_text.done' ||
-    type === 'response.reasoning_text.done' ||
-    type === 'response.reasoning_summary_part.done'
+    type === 'response.reasoning_summary_part.done' ||
+    (type.startsWith('response.reasoning') && type.endsWith('.done'))
   ) {
     return {
       delta_type: 'reasoning' as const,

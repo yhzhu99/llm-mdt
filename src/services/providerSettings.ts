@@ -12,9 +12,9 @@ interface SettingsRecord {
 export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
   baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
   apiKey: '',
-  councilModels: ['openai/gpt-5.2', 'google/gemini-3-pro-preview', 'deepseek/deepseek-reasoner'],
-  chairmanModel: 'google/gemini-3-pro-preview',
-  titleModel: 'google/gemini-3-pro-preview',
+  councilModels: ['openai/gpt-5.4', 'google/gemini-3.1-pro-preview', 'deepseek/deepseek-reasoner'],
+  chairmanModel: 'openai/gpt-5.4',
+  titleModel: 'google/gemini-3.1-flash-lite-preview',
 }
 
 function uniqueStrings(values: unknown[]) {

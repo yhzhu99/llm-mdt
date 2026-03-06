@@ -237,7 +237,7 @@ onBeforeUnmount(() => {
                 <input
                   v-model="formState.chairmanModel"
                   type="text"
-                  placeholder="google/gemini-3-pro-preview"
+                  placeholder="openai/gpt-5.4"
                   class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </label>
