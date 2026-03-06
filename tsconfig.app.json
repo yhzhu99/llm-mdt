@@ -25,7 +25,8 @@
       "ES2022",
       "DOM",
       "DOM.Iterable"
-    ]
+    ],
+    "noEmit": true
   },
   "include": [
     "src/**/*.ts",
