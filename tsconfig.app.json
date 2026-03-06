@@ -9,8 +9,7 @@
       ]
     },
     "types": [
-      "vite/client",
-      "vitest/globals"
+      "vite/client"
     ],
     "strict": true,
     "noUnusedLocals": true,

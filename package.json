@@ -8,9 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",
     "lint": "eslint .",
-    "preview": "vite preview",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "preview": "vite preview"
   },
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -27,25 +25,19 @@
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@tailwindcss/typography": "^0.5.19",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/vue": "^8.1.0",
     "@types/node": "latest",
     "@vitejs/plugin-vue": "^6.0.1",
-    "@vue/test-utils": "^2.4.6",
     "@vue/tsconfig": "^0.8.1",
     "autoprefixer": "^10.4.23",
     "eslint": "^9.39.1",
     "eslint-plugin-vue": "^10.5.1",
-    "fake-indexeddb": "^6.2.3",
     "globals": "^16.5.0",
-    "jsdom": "^27.2.0",
     "postcss": "^8.5.6",
     "tailwindcss": "^3.4.19",
     "tailwindcss-animate": "^1.0.7",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.2",
     "vite": "^7.2.4",
-    "vitest": "^3.2.4",
     "vue-tsc": "^3.1.4"
   }
 }
