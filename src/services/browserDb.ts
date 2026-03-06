@@ -1,9 +1,9 @@
 const DB_NAME = 'llm-mdt'
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 let dbPromise: Promise<IDBDatabase> | null = null
 
-export type BrowserStoreName = 'conversations' | 'settings' | 'projects'
+export type BrowserStoreName = 'conversations' | 'settings' | 'projects' | 'runs'
 export type BrowserStoreSelection = IDBObjectStore | Record<BrowserStoreName, IDBObjectStore>
 
 function createError(message: string) {
@@ -53,6 +53,10 @@ export function openBrowserDb() {
 
       if (!db.objectStoreNames.contains('projects')) {
         db.createObjectStore('projects', { keyPath: 'id' })
+      }
+
+      if (!db.objectStoreNames.contains('runs')) {
+        db.createObjectStore('runs', { keyPath: 'conversationId' })
       }
 
       if (oldVersion < 2 && transaction && db.objectStoreNames.contains('conversations')) {

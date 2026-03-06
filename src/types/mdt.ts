@@ -174,6 +174,21 @@ export interface ConversationRunState {
   hasUnreadUpdate: boolean
 }
 
+export interface PersistedConversationRun {
+  conversationId: string
+  projectId: string
+  requestId: string
+  assistantMessageId: string
+  userMessageId: string
+  content: string
+  locale: AppLocale
+  shouldGenerateTitle: boolean
+  startedAt: string
+  updatedAt: string
+  stage: ConversationRunStage
+  status: Extract<ConversationRunStatus, 'running' | 'complete' | 'error'>
+}
+
 export interface AssistantMessageRecord {
   id?: string
   stage1?: Stage1Result[]
@@ -191,6 +206,13 @@ export interface HealthStatus {
 export interface SendMessagePayload {
   content: string
   locale?: AppLocale
+}
+
+export interface MdtRunPersistenceOptions {
+  persistUserMessage?: boolean
+  shouldGenerateTitle?: boolean
+  assistantMessageId?: string
+  assistantMessageCreatedAt?: string
 }
 
 export interface SendMessageResult {

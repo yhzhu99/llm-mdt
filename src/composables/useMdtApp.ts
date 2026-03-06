@@ -9,6 +9,7 @@ import type {
   Conversation,
   ConversationRunState,
   ConversationSummary,
+  PersistedConversationRun,
   ProjectSummary,
   ProviderSettings,
   ProviderSettingsInput,
@@ -19,6 +20,8 @@ import type {
   StreamStatusMeta,
 } from '@/types'
 import { getProviderStatusText, groupConversationsByDate, toRuntimeConfig } from '@/utils/conversations'
+
+const placeholderConversationTitles = new Set(['', 'New Conversation', 'Conversation', '新对话'])
 
 const cloneValue = <T>(value: T): T => {
   const source = typeof value === 'object' && value !== null ? toRaw(value) : value
@@ -108,6 +111,12 @@ const createRequestId = () =>
   (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
   `request_${Date.now()}_${Math.random().toString(16).slice(2)}`
 
+const createFreshAssistantMessage = (assistantId: string, councilOrder: string[], createdAt?: string) => ({
+  ...createAssistantMessage(councilOrder),
+  id: assistantId,
+  created_at: createdAt || new Date().toISOString(),
+})
+
 const markStatusMapAsError = (statuses: Record<string, StreamStatusMeta>, message: string) =>
   Object.fromEntries(
     Object.entries(statuses).map(([model, meta]) => [
@@ -149,6 +158,7 @@ export function useMdtApp() {
   const conversations = ref<ConversationSummary[]>([])
   const conversationCache = ref<Record<string, Conversation>>({})
   const conversationRunStates = ref<Record<string, ConversationRunState>>({})
+  const persistedRuns = ref<Record<string, PersistedConversationRun>>({})
   const projects = ref<ProjectSummary[]>([])
   const currentConversationId = ref<string | null>(null)
   const currentProjectId = ref<string | null>(null)
@@ -158,6 +168,9 @@ export function useMdtApp() {
   const settingsError = ref('')
   const lastProviderError = ref('')
   const isSidebarCollapsed = ref(false)
+  const hasHydratedPersistedRuns = ref(false)
+  const isResumingPersistedRuns = ref(false)
+  const resumingRunIds = new Set<string>()
 
   const currentProject = computed(
     () => projects.value.find((project) => project.id === currentProjectId.value) || null,
@@ -196,6 +209,11 @@ export function useMdtApp() {
     getProviderStatusText(providerStatus.value, providerSettings.value, providerErrorMessage.value, locale.value),
   )
 
+  const hasResolvedConversationTitle = (conversation?: Pick<Conversation, 'title'> | null) => {
+    const trimmed = String(conversation?.title || '').trim()
+    return Boolean(trimmed) && !placeholderConversationTitles.has(trimmed)
+  }
+
   const isActiveRequest = (conversationId: string, requestId: string) =>
     conversationRunStates.value[conversationId]?.requestId === requestId
 
@@ -207,6 +225,11 @@ export function useMdtApp() {
   const setConversationInCache = (conversation: Conversation) => {
     conversationCache.value[conversation.id] = cloneValue(conversation)
     return conversationCache.value[conversation.id]!
+  }
+
+  const cachePersistedRun = (run: PersistedConversationRun) => {
+    persistedRuns.value[run.conversationId] = cloneValue(run)
+    return persistedRuns.value[run.conversationId]!
   }
 
   const removeConversationFromCache = (conversationId: string) => {
@@ -221,6 +244,13 @@ export function useMdtApp() {
     const nextStates = { ...conversationRunStates.value }
     delete nextStates[conversationId]
     conversationRunStates.value = nextStates
+  }
+
+  const removePersistedRunFromCache = (conversationId: string) => {
+    if (!(conversationId in persistedRuns.value)) return
+    const nextRuns = { ...persistedRuns.value }
+    delete nextRuns[conversationId]
+    persistedRuns.value = nextRuns
   }
 
   const updateConversationById = (
@@ -287,6 +317,33 @@ export function useMdtApp() {
             ? false
             : true,
     }))
+  }
+
+  const savePersistedRun = async (run: PersistedConversationRun) => {
+    const saved = await api.saveConversationRun(run)
+    return cachePersistedRun(saved)
+  }
+
+  const deletePersistedRun = async (conversationId: string) => {
+    removePersistedRunFromCache(conversationId)
+    await api.deleteConversationRun(conversationId)
+  }
+
+  const syncPersistedRunProgress = (
+    conversationId: string,
+    requestId: string,
+    updates: Partial<PersistedConversationRun>,
+  ) => {
+    const current = persistedRuns.value[conversationId]
+    if (!current || current.requestId !== requestId) return
+
+    const next: PersistedConversationRun = {
+      ...current,
+      ...updates,
+      updatedAt: new Date().toISOString(),
+    }
+    cachePersistedRun(next)
+    void api.saveConversationRun(next)
   }
 
   const loadProjects = async () => {
@@ -435,6 +492,7 @@ export function useMdtApp() {
       settingsError.value = ''
       lastProviderError.value = ''
       isSettingsOpen.value = false
+      void resumePersistedRuns()
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       settingsError.value = message
@@ -461,7 +519,7 @@ export function useMdtApp() {
     resetDraftState()
   }
 
-  const removeProjectArtifacts = (projectId: string) => {
+  const removeProjectArtifacts = async (projectId: string) => {
     const nextCache = { ...conversationCache.value }
     const nextRunStates = { ...conversationRunStates.value }
 
@@ -469,11 +527,20 @@ export function useMdtApp() {
       if (conversation.project_id === projectId) {
         delete nextCache[conversationId]
         delete nextRunStates[conversationId]
+        resumingRunIds.delete(conversationId)
       }
     }
 
     conversationCache.value = nextCache
     conversationRunStates.value = nextRunStates
+
+    for (const [conversationId, run] of Object.entries(persistedRuns.value)) {
+      if (run.projectId === projectId) {
+        removePersistedRunFromCache(conversationId)
+      }
+    }
+
+    await api.deleteConversationRunsByProject(projectId)
   }
 
   const createProject = async (name: string) => {
@@ -503,7 +570,7 @@ export function useMdtApp() {
     try {
       const wasCurrentProject = currentProjectId.value === projectId
       const result = await api.deleteProject(projectId)
-      removeProjectArtifacts(projectId)
+      await removeProjectArtifacts(projectId)
       await loadProjects()
 
       if (wasCurrentProject || !projects.value.some((project) => project.id === currentProjectId.value)) {
@@ -520,6 +587,8 @@ export function useMdtApp() {
   const deleteConversation = async (conversationId: string) => {
     try {
       await api.deleteConversation(conversationId)
+      await deletePersistedRun(conversationId).catch(() => undefined)
+      resumingRunIds.delete(conversationId)
       removeConversationFromCache(conversationId)
       removeConversationRunState(conversationId)
       if (currentConversationId.value === conversationId) {
@@ -604,6 +673,111 @@ export function useMdtApp() {
     return cloneValue(conversation)
   }
 
+  const buildPersistedRun = ({
+    conversationId,
+    projectId,
+    requestId,
+    assistantMessageId,
+    userMessageId,
+    content,
+    shouldGenerateTitle,
+    startedAt,
+  }: {
+    conversationId: string
+    projectId: string
+    requestId: string
+    assistantMessageId: string
+    userMessageId: string
+    content: string
+    shouldGenerateTitle: boolean
+    startedAt: string
+  }): PersistedConversationRun => ({
+    conversationId,
+    projectId,
+    requestId,
+    assistantMessageId,
+    userMessageId,
+    content,
+    locale: locale.value,
+    shouldGenerateTitle,
+    startedAt,
+    updatedAt: startedAt,
+    stage: 'stage1',
+    status: 'running',
+  })
+
+  const rehydrateRunState = (run: PersistedConversationRun) => {
+    const current = getRunState(run.conversationId)
+    updateConversationRunState(run.conversationId, () => ({
+      requestId: run.requestId,
+      status: run.status === 'complete' ? 'complete' : run.status === 'error' ? 'error' : 'running',
+      stage: run.stage,
+      startedAt: run.startedAt,
+      completedAt: run.status === 'running' ? null : run.updatedAt,
+      lastActivityAt: run.updatedAt,
+      lastError: current.lastError,
+      hasUnreadUpdate: currentConversationId.value === run.conversationId ? false : true,
+    }))
+  }
+
+  const prepareAssistantPlaceholder = async ({
+    conversationId,
+    assistantMessageId,
+    assistantCreatedAt,
+  }: {
+    conversationId: string
+    assistantMessageId: string
+    assistantCreatedAt?: string
+  }) => {
+    const nextConversation = updateConversationById(conversationId, (conversation) => {
+      if (!conversation) return conversation
+      const placeholderIndex = conversation.messages.findIndex(
+        (message) => message.role === 'assistant' && message.id === assistantMessageId,
+      )
+      const freshAssistant = createFreshAssistantMessage(
+        assistantMessageId,
+        runtimeConfig.value.council_models,
+        assistantCreatedAt,
+      )
+
+      if (placeholderIndex >= 0) {
+        conversation.messages[placeholderIndex] = freshAssistant
+      } else {
+        conversation.messages.push(freshAssistant)
+      }
+
+      return conversation
+    })
+
+    if (nextConversation) {
+      await api.saveConversation(nextConversation)
+    }
+  }
+
+  const hydratePersistedRuns = async () => {
+    try {
+      const runs = await api.listConversationRuns()
+      const nextRuns: Record<string, PersistedConversationRun> = {}
+
+      for (const run of runs) {
+        try {
+          const conversation = await api.getConversation(run.conversationId)
+          setConversationInCache(conversation)
+          nextRuns[run.conversationId] = run
+          rehydrateRunState(run)
+        } catch {
+          await api.deleteConversationRun(run.conversationId)
+        }
+      }
+
+      persistedRuns.value = nextRuns
+      hasHydratedPersistedRuns.value = true
+    } catch (error) {
+      console.error('Failed to hydrate persisted runs', error)
+      hasHydratedPersistedRuns.value = true
+    }
+  }
+
   const syncConversationAfterRun = async (conversationId: string, projectId: string, requestId: string) => {
     try {
       if (projectId === currentProjectId.value) {
@@ -614,6 +788,8 @@ export function useMdtApp() {
     } catch (error) {
       console.error('Failed to refresh conversation after run', error)
     } finally {
+      resumingRunIds.delete(conversationId)
+
       if (isActiveRequest(conversationId, requestId)) {
         const state = getRunState(conversationId)
         if (state.status === 'running') {
@@ -628,6 +804,12 @@ export function useMdtApp() {
           }))
         }
       }
+
+      if (persistedRuns.value[conversationId]) {
+        await deletePersistedRun(conversationId).catch((error) => {
+          console.error('Failed to clear persisted run', error)
+        })
+      }
     }
   }
 
@@ -636,13 +818,19 @@ export function useMdtApp() {
     projectId,
     requestId,
     assistantMessageId,
+    assistantMessageCreatedAt,
     content,
+    shouldGenerateTitle,
+    messageLocale,
   }: {
     conversationId: string
     projectId: string
     requestId: string
     assistantMessageId: string
+    assistantMessageCreatedAt?: string
     content: string
+    shouldGenerateTitle: boolean
+    messageLocale: 'zh-CN' | 'en'
   }) => {
     const updateAssistantMessage = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
       if (!isActiveRequest(conversationId, requestId)) return
@@ -695,299 +883,312 @@ export function useMdtApp() {
     }
 
     try {
-      await api.sendMessageStream(conversationId, { content, locale: locale.value }, async (_eventType, event) => {
-        if (!isActiveRequest(conversationId, requestId)) return
+      await api.sendMessageStream(
+        conversationId,
+        { content, locale: messageLocale },
+        async (_eventType, event) => {
+          if (!isActiveRequest(conversationId, requestId)) return
 
-        switch (event.type) {
-          case 'stage1_start':
-            updateAssistantMessage((message) => ({
-              ...message,
-              loading: { stage1: true, stage2: message.loading.stage2, stage3: message.loading.stage3 },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1', lastError: '' })
-            break
-          case 'stage1_model_start': {
-            const model = event.model
-            enqueueAssistantUpdate((message) => ({
-              ...message,
-              stream: {
-                ...message.stream,
-                stage1: {
-                  ...message.stream.stage1,
-                  [model]: { response: '', thinking: '' },
-                },
-              },
-              streamMeta: {
-                ...message.streamMeta,
-                stage1: {
-                  ...message.streamMeta.stage1,
-                  [model]: { status: 'running' },
-                },
-              },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
-            break
-          }
-          case 'stage1_model_delta': {
-            const { model, delta_type, text } = event
-            enqueueAssistantUpdate((message) => {
-              const previous = message.stream.stage1[model] || { response: '', thinking: '' }
-              const next: Stage1StreamState = { ...previous }
-              if (delta_type === 'content') next.response += text || ''
-              if (delta_type === 'reasoning') next.thinking += text || ''
-              return {
+          switch (event.type) {
+            case 'stage1_start':
+              updateAssistantMessage((message) => ({
+                ...message,
+                loading: { stage1: true, stage2: message.loading.stage2, stage3: message.loading.stage3 },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1', lastError: '' })
+              syncPersistedRunProgress(conversationId, requestId, { stage: 'stage1', status: 'running' })
+              break
+            case 'stage1_model_start': {
+              const model = event.model
+              enqueueAssistantUpdate((message) => ({
                 ...message,
                 stream: {
                   ...message.stream,
-                  stage1: { ...message.stream.stage1, [model]: next },
+                  stage1: {
+                    ...message.stream.stage1,
+                    [model]: { response: '', thinking: '' },
+                  },
                 },
-              }
-            })
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
-            break
-          }
-          case 'stage1_model_error': {
-            const { model, message: errorMessage } = event
-            enqueueAssistantUpdate((message) => ({
-              ...message,
-              streamMeta: {
-                ...message.streamMeta,
-                stage1: {
-                  ...message.streamMeta.stage1,
-                  [model]: { status: 'error', message: errorMessage },
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage1: {
+                    ...message.streamMeta.stage1,
+                    [model]: { status: 'running' },
+                  },
                 },
-              },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
-            break
-          }
-          case 'stage1_complete': {
-            const { data } = event
-            updateAssistantMessage((message) => ({
-              ...message,
-              stage1: data,
-              streamMeta: {
-                ...message.streamMeta,
-                stage1: Object.fromEntries(
-                  Object.keys(message.streamMeta.stage1).map((model) => [
-                    model,
-                    {
-                      status: data.some((result) => result.model === model)
-                        ? 'complete'
-                        : message.streamMeta.stage1[model]?.status || 'idle',
-                    },
-                  ]),
-                ) as Record<string, StreamStatusMeta>,
-              },
-              loading: { stage1: false, stage2: message.loading.stage2, stage3: message.loading.stage3 },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
-            break
-          }
-          case 'stage2_start':
-            updateAssistantMessage((message) => ({
-              ...message,
-              loading: { stage1: message.loading.stage1, stage2: true, stage3: message.loading.stage3 },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
-            break
-          case 'stage2_model_start': {
-            const model = event.model
-            enqueueAssistantUpdate((message) => ({
-              ...message,
-              stream: {
-                ...message.stream,
-                stage2: {
-                  ...message.stream.stage2,
-                  [model]: { ranking: '', thinking: '' },
-                },
-              },
-              streamMeta: {
-                ...message.streamMeta,
-                stage2: {
-                  ...message.streamMeta.stage2,
-                  [model]: { status: 'running' },
-                },
-              },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
-            break
-          }
-          case 'stage2_model_delta': {
-            const { model, delta_type, text } = event
-            enqueueAssistantUpdate((message) => {
-              const previous = message.stream.stage2[model] || { ranking: '', thinking: '' }
-              const next: Stage2StreamState = { ...previous }
-              if (delta_type === 'content') next.ranking += text || ''
-              if (delta_type === 'reasoning') next.thinking += text || ''
-              return {
-                ...message,
-                stream: {
-                  ...message.stream,
-                  stage2: { ...message.stream.stage2, [model]: next },
-                },
-              }
-            })
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
-            break
-          }
-          case 'stage2_model_error': {
-            const { model, message: errorMessage } = event
-            enqueueAssistantUpdate((message) => ({
-              ...message,
-              streamMeta: {
-                ...message.streamMeta,
-                stage2: {
-                  ...message.streamMeta.stage2,
-                  [model]: { status: 'error', message: errorMessage },
-                },
-              },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
-            break
-          }
-          case 'stage2_complete': {
-            const { data, metadata } = event
-            updateAssistantMessage((message) => ({
-              ...message,
-              stage2: data,
-              metadata,
-              streamMeta: {
-                ...message.streamMeta,
-                stage2: Object.fromEntries(
-                  Object.keys(message.streamMeta.stage2).map((model) => [
-                    model,
-                    {
-                      status: data.some((result) => result.model === model)
-                        ? 'complete'
-                        : message.streamMeta.stage2[model]?.status || 'idle',
-                    },
-                  ]),
-                ) as Record<string, StreamStatusMeta>,
-              },
-              loading: { stage1: message.loading.stage1, stage2: false, stage3: message.loading.stage3 },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
-            break
-          }
-          case 'stage3_start':
-            updateAssistantMessage((message) => ({
-              ...message,
-              stream: {
-                ...message.stream,
-                stage3: { response: '', thinking: '' },
-              },
-              streamMeta: {
-                ...message.streamMeta,
-                stage3: { status: 'running' },
-              },
-              loading: { stage1: message.loading.stage1, stage2: message.loading.stage2, stage3: true },
-            }))
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage3' })
-            break
-          case 'stage3_delta': {
-            const { delta_type, text } = event
-            enqueueAssistantUpdate((message) => {
-              const next: Stage3StreamState = { ...message.stream.stage3 }
-              if (delta_type === 'content') next.response += text || ''
-              if (delta_type === 'reasoning') next.thinking += text || ''
-              return {
-                ...message,
-                stream: {
-                  ...message.stream,
-                  stage3: next,
-                },
-              }
-            })
-            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage3' })
-            break
-          }
-          case 'stage3_error': {
-            const errorMessage = event.message || t('orchestratorFinalSynthesisFailed')
-            enqueueAssistantUpdate((message) => ({
-              ...message,
-              streamMeta: {
-                ...message.streamMeta,
-                stage3: { status: 'error', message: errorMessage },
-              },
-            }))
-            lastProviderError.value = errorMessage
-            touchConversationActivity(conversationId, requestId, {
-              status: 'error',
-              stage: 'stage3',
-              lastError: errorMessage,
-              completedAt: new Date().toISOString(),
-            })
-            break
-          }
-          case 'stage3_complete': {
-            const { data } = event
-            updateAssistantMessage((message) => ({
-              ...message,
-              stage3: data,
-              streamMeta: {
-                ...message.streamMeta,
-                stage3: { status: 'complete' },
-              },
-              loading: { stage1: message.loading.stage1, stage2: message.loading.stage2, stage3: false },
-            }))
-            touchConversationActivity(conversationId, requestId, {
-              status: getRunState(conversationId).status === 'error' ? 'error' : 'running',
-              stage: 'stage3',
-            })
-            break
-          }
-          case 'title_complete': {
-            const title = event.data.title
-            if (title) {
-              upsertConversationInSidebar({
-                id: conversationId,
-                project_id: projectId,
-                title,
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
+              break
+            }
+            case 'stage1_model_delta': {
+              const { model, delta_type, text } = event
+              enqueueAssistantUpdate((message) => {
+                const previous = message.stream.stage1[model] || { response: '', thinking: '' }
+                const next: Stage1StreamState = { ...previous }
+                if (delta_type === 'content') next.response += text || ''
+                if (delta_type === 'reasoning') next.thinking += text || ''
+                return {
+                  ...message,
+                  stream: {
+                    ...message.stream,
+                    stage1: { ...message.stream.stage1, [model]: next },
+                  },
+                }
               })
-              updateConversationById(conversationId, (conversation) => {
-                if (!conversation) return conversation
-                conversation.title = title
-                return conversation
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
+              break
+            }
+            case 'stage1_model_error': {
+              const { model, message: errorMessage } = event
+              enqueueAssistantUpdate((message) => ({
+                ...message,
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage1: {
+                    ...message.streamMeta.stage1,
+                    [model]: { status: 'error', message: errorMessage },
+                  },
+                },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
+              break
+            }
+            case 'stage1_complete': {
+              const { data } = event
+              updateAssistantMessage((message) => ({
+                ...message,
+                stage1: data,
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage1: Object.fromEntries(
+                    Object.keys(message.streamMeta.stage1).map((model) => [
+                      model,
+                      {
+                        status: data.some((result) => result.model === model)
+                          ? 'complete'
+                          : message.streamMeta.stage1[model]?.status || 'idle',
+                      },
+                    ]),
+                  ) as Record<string, StreamStatusMeta>,
+                },
+                loading: { stage1: false, stage2: message.loading.stage2, stage3: message.loading.stage3 },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
+              break
+            }
+            case 'stage2_start':
+              updateAssistantMessage((message) => ({
+                ...message,
+                loading: { stage1: message.loading.stage1, stage2: true, stage3: message.loading.stage3 },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
+              syncPersistedRunProgress(conversationId, requestId, { stage: 'stage2', status: 'running' })
+              break
+            case 'stage2_model_start': {
+              const model = event.model
+              enqueueAssistantUpdate((message) => ({
+                ...message,
+                stream: {
+                  ...message.stream,
+                  stage2: {
+                    ...message.stream.stage2,
+                    [model]: { ranking: '', thinking: '' },
+                  },
+                },
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage2: {
+                    ...message.streamMeta.stage2,
+                    [model]: { status: 'running' },
+                  },
+                },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
+              break
+            }
+            case 'stage2_model_delta': {
+              const { model, delta_type, text } = event
+              enqueueAssistantUpdate((message) => {
+                const previous = message.stream.stage2[model] || { ranking: '', thinking: '' }
+                const next: Stage2StreamState = { ...previous }
+                if (delta_type === 'content') next.ranking += text || ''
+                if (delta_type === 'reasoning') next.thinking += text || ''
+                return {
+                  ...message,
+                  stream: {
+                    ...message.stream,
+                    stage2: { ...message.stream.stage2, [model]: next },
+                  },
+                }
               })
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
+              break
             }
-            if (projectId === currentProjectId.value) {
-              void loadConversations(projectId)
+            case 'stage2_model_error': {
+              const { model, message: errorMessage } = event
+              enqueueAssistantUpdate((message) => ({
+                ...message,
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage2: {
+                    ...message.streamMeta.stage2,
+                    [model]: { status: 'error', message: errorMessage },
+                  },
+                },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
+              break
             }
-            break
-          }
-          case 'complete': {
-            const now = new Date().toISOString()
-            updateConversationRunState(conversationId, (state) => ({
-              ...state,
-              status: state.status === 'error' ? 'error' : 'complete',
-              stage: 'stage3',
-              completedAt: now,
-              lastActivityAt: now,
-              hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
-            }))
-            if (getRunState(conversationId).status !== 'error') {
-              lastProviderError.value = ''
+            case 'stage2_complete': {
+              const { data, metadata } = event
+              updateAssistantMessage((message) => ({
+                ...message,
+                stage2: data,
+                metadata,
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage2: Object.fromEntries(
+                    Object.keys(message.streamMeta.stage2).map((model) => [
+                      model,
+                      {
+                        status: data.some((result) => result.model === model)
+                          ? 'complete'
+                          : message.streamMeta.stage2[model]?.status || 'idle',
+                      },
+                    ]),
+                  ) as Record<string, StreamStatusMeta>,
+                },
+                loading: { stage1: message.loading.stage1, stage2: false, stage3: message.loading.stage3 },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
+              break
             }
-            break
+            case 'stage3_start':
+              updateAssistantMessage((message) => ({
+                ...message,
+                stream: {
+                  ...message.stream,
+                  stage3: { response: '', thinking: '' },
+                },
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage3: { status: 'running' },
+                },
+                loading: { stage1: message.loading.stage1, stage2: message.loading.stage2, stage3: true },
+              }))
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage3' })
+              syncPersistedRunProgress(conversationId, requestId, { stage: 'stage3', status: 'running' })
+              break
+            case 'stage3_delta': {
+              const { delta_type, text } = event
+              enqueueAssistantUpdate((message) => {
+                const next: Stage3StreamState = { ...message.stream.stage3 }
+                if (delta_type === 'content') next.response += text || ''
+                if (delta_type === 'reasoning') next.thinking += text || ''
+                return {
+                  ...message,
+                  stream: {
+                    ...message.stream,
+                    stage3: next,
+                  },
+                }
+              })
+              touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage3' })
+              break
+            }
+            case 'stage3_error': {
+              const errorMessage = event.message || t('orchestratorFinalSynthesisFailed')
+              enqueueAssistantUpdate((message) => ({
+                ...message,
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage3: { status: 'error', message: errorMessage },
+                },
+              }))
+              lastProviderError.value = errorMessage
+              touchConversationActivity(conversationId, requestId, {
+                status: 'error',
+                stage: 'stage3',
+                lastError: errorMessage,
+                completedAt: new Date().toISOString(),
+              })
+              break
+            }
+            case 'stage3_complete': {
+              const { data } = event
+              updateAssistantMessage((message) => ({
+                ...message,
+                stage3: data,
+                streamMeta: {
+                  ...message.streamMeta,
+                  stage3: { status: 'complete' },
+                },
+                loading: { stage1: message.loading.stage1, stage2: message.loading.stage2, stage3: false },
+              }))
+              touchConversationActivity(conversationId, requestId, {
+                status: getRunState(conversationId).status === 'error' ? 'error' : 'running',
+                stage: 'stage3',
+              })
+              break
+            }
+            case 'title_complete': {
+              const title = event.data.title
+              if (title) {
+                upsertConversationInSidebar({
+                  id: conversationId,
+                  project_id: projectId,
+                  title,
+                })
+                updateConversationById(conversationId, (conversation) => {
+                  if (!conversation) return conversation
+                  conversation.title = title
+                  return conversation
+                })
+              }
+              if (projectId === currentProjectId.value) {
+                void loadConversations(projectId)
+              }
+              break
+            }
+            case 'complete': {
+              const now = new Date().toISOString()
+              updateConversationRunState(conversationId, (state) => ({
+                ...state,
+                status: state.status === 'error' ? 'error' : 'complete',
+                stage: 'stage3',
+                completedAt: now,
+                lastActivityAt: now,
+                hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+              }))
+              if (getRunState(conversationId).status !== 'error') {
+                lastProviderError.value = ''
+              }
+              break
+            }
+            case 'error': {
+              const errorMessage = event.message || t('orchestratorRunFailed')
+              lastProviderError.value = errorMessage
+              setAssistantErrorState(errorMessage)
+              const now = new Date().toISOString()
+              updateConversationRunState(conversationId, (state) => ({
+                ...state,
+                status: 'error',
+                completedAt: now,
+                lastActivityAt: now,
+                lastError: errorMessage,
+                hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+              }))
+              break
+            }
           }
-          case 'error': {
-            const errorMessage = event.message || t('orchestratorRunFailed')
-            lastProviderError.value = errorMessage
-            setAssistantErrorState(errorMessage)
-            const now = new Date().toISOString()
-            updateConversationRunState(conversationId, (state) => ({
-              ...state,
-              status: 'error',
-              completedAt: now,
-              lastActivityAt: now,
-              lastError: errorMessage,
-              hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
-            }))
-            break
-          }
-        }
-      })
+        },
+        {
+          persistUserMessage: false,
+          shouldGenerateTitle,
+          assistantMessageId,
+          assistantMessageCreatedAt,
+        },
+      )
     } catch (error) {
       if (!isActiveRequest(conversationId, requestId)) return
       const errorMessage = error instanceof Error ? error.message : String(error)
@@ -1004,6 +1205,68 @@ export function useMdtApp() {
       }))
     } finally {
       await syncConversationAfterRun(conversationId, projectId, requestId)
+    }
+  }
+
+  const resumePersistedRuns = async () => {
+    if (!hasHydratedPersistedRuns.value || !providerConfigured.value || isResumingPersistedRuns.value) {
+      return
+    }
+
+    const recoverableRuns = Object.values(persistedRuns.value).filter((run) => run.status === 'running')
+    if (recoverableRuns.length === 0) return
+
+    isResumingPersistedRuns.value = true
+
+    try {
+      await Promise.all(
+        recoverableRuns.map(async (run) => {
+          if (resumingRunIds.has(run.conversationId)) return
+          resumingRunIds.add(run.conversationId)
+
+          let conversation = conversationCache.value[run.conversationId]
+          if (!conversation) {
+            try {
+              conversation = await api.getConversation(run.conversationId)
+              setConversationInCache(conversation)
+            } catch (error) {
+              console.error('Failed to load conversation for run recovery', error)
+              resumingRunIds.delete(run.conversationId)
+              await deletePersistedRun(run.conversationId).catch(() => undefined)
+              removeConversationRunState(run.conversationId)
+              return
+            }
+          }
+
+          await prepareAssistantPlaceholder({
+            conversationId: run.conversationId,
+            assistantMessageId: run.assistantMessageId,
+            assistantCreatedAt:
+              (conversation.messages.find(
+                (message) => message.role === 'assistant' && message.id === run.assistantMessageId,
+              ) as AssistantConversationMessage | undefined)?.created_at || run.startedAt,
+          })
+
+          const shouldGenerateTitle = run.shouldGenerateTitle && !hasResolvedConversationTitle(conversation)
+          rehydrateRunState(run)
+
+          void runConversationTask({
+            conversationId: run.conversationId,
+            projectId: run.projectId,
+            requestId: run.requestId,
+            assistantMessageId: run.assistantMessageId,
+            assistantMessageCreatedAt:
+              (conversation.messages.find(
+                (message) => message.role === 'assistant' && message.id === run.assistantMessageId,
+              ) as AssistantConversationMessage | undefined)?.created_at || run.startedAt,
+            content: run.content,
+            shouldGenerateTitle,
+            messageLocale: run.locale,
+          })
+        }),
+      )
+    } finally {
+      isResumingPersistedRuns.value = false
     }
   }
 
@@ -1048,9 +1311,10 @@ export function useMdtApp() {
     const existingMessageCount = Array.isArray(conversationForRequest.messages)
       ? conversationForRequest.messages.length
       : conversationCache.value[conversationIdForRequest]?.messages.length || 0
+    const shouldGenerateTitle = existingMessageCount === 0 || !hasResolvedConversationTitle(conversationForRequest)
 
-    updateConversationById(conversationIdForRequest, (conversation) => {
-      const nextConversation =
+    const nextConversation = updateConversationById(conversationIdForRequest, (conversation) => {
+      const baselineConversation =
         conversation ||
         createConversationSnapshot({
           id: conversationIdForRequest,
@@ -1060,13 +1324,25 @@ export function useMdtApp() {
         })
 
       return {
-        ...nextConversation,
+        ...baselineConversation,
         title:
-          String(nextConversation.title || optimisticTitle || t('conversationUntitled')).trim() ||
+          String(baselineConversation.title || optimisticTitle || t('conversationUntitled')).trim() ||
           t('conversationUntitled'),
-        messages: [...nextConversation.messages, userMessage, assistantMessage],
+        messages: [...baselineConversation.messages, userMessage, assistantMessage],
       }
     })
+
+    if (!nextConversation) {
+      return
+    }
+
+    try {
+      await api.saveConversation(nextConversation)
+    } catch (error) {
+      console.error('Failed to persist optimistic conversation', error)
+      await loadConversation(conversationIdForRequest, { force: true })
+      return
+    }
 
     upsertConversationInSidebar({
       id: conversationIdForRequest,
@@ -1077,6 +1353,24 @@ export function useMdtApp() {
     })
 
     const startedAt = new Date().toISOString()
+    const persistedRun = buildPersistedRun({
+      conversationId: conversationIdForRequest,
+      projectId: activeProjectId,
+      requestId,
+      assistantMessageId: assistantMessage.id,
+      userMessageId: userMessage.id || requestId,
+      content: trimmedContent,
+      shouldGenerateTitle,
+      startedAt,
+    })
+
+    try {
+      await savePersistedRun(persistedRun)
+    } catch (error) {
+      console.error('Failed to save persisted run', error)
+      return
+    }
+
     conversationRunStates.value[conversationIdForRequest] = {
       requestId,
       status: 'running',
@@ -1093,7 +1387,10 @@ export function useMdtApp() {
       projectId: activeProjectId,
       requestId,
       assistantMessageId: assistantMessage.id,
+      assistantMessageCreatedAt: assistantMessage.created_at,
       content: trimmedContent,
+      shouldGenerateTitle,
+      messageLocale: locale.value,
     })
   }
 
@@ -1109,9 +1406,17 @@ export function useMdtApp() {
     await loadConversations(projectId)
   })
 
+  watch(providerConfigured, (configured) => {
+    if (configured) {
+      void resumePersistedRuns()
+    }
+  })
+
   onMounted(async () => {
     await loadAppPreferences()
     await Promise.all([loadProjects(), loadProviderSettings()])
+    await hydratePersistedRuns()
+    await resumePersistedRuns()
   })
 
   return {

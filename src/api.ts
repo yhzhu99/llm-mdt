@@ -1,12 +1,16 @@
 import { conversationStore } from './services/conversationStore'
+import { conversationRunStore } from './services/conversationRunStore'
 import { appPreferencesStore } from './services/appPreferences'
 import { runMdtConversationStream } from './services/mdtOrchestrator'
 import { projectStore } from './services/projectStore'
 import { isProviderConfigured, settingsStore } from './services/providerSettings'
 import type {
   AppLocale,
+  Conversation,
   HealthStatus,
   MdtEventHandler,
+  MdtRunPersistenceOptions,
+  PersistedConversationRun,
   ProviderSettingsInput,
   RuntimeConfig,
   SendMessagePayload,
@@ -68,6 +72,10 @@ export const api = {
     return conversation
   },
 
+  async saveConversation(conversation: Conversation) {
+    return conversationStore.saveConversation(conversation)
+  },
+
   async deleteConversation(conversationId: string) {
     const deleted = await conversationStore.deleteConversation(conversationId)
     if (!deleted) {
@@ -78,6 +86,22 @@ export const api = {
 
   async renameConversation(conversationId: string, title: string) {
     return conversationStore.updateConversationTitle(conversationId, title)
+  },
+
+  async listConversationRuns() {
+    return conversationRunStore.list()
+  },
+
+  async saveConversationRun(run: PersistedConversationRun) {
+    return conversationRunStore.save(run)
+  },
+
+  async deleteConversationRun(conversationId: string) {
+    return conversationRunStore.delete(conversationId)
+  },
+
+  async deleteConversationRunsByProject(projectId: string) {
+    return conversationRunStore.deleteByProject(projectId)
   },
 
   async listProjects() {
@@ -126,7 +150,12 @@ export const api = {
     return result
   },
 
-  async sendMessageStream(conversationId: string, payload: SendMessagePayload, onEvent: MdtEventHandler) {
+  async sendMessageStream(
+    conversationId: string,
+    payload: SendMessagePayload,
+    onEvent: MdtEventHandler,
+    options?: MdtRunPersistenceOptions,
+  ) {
     const settings = await settingsStore.get()
     return runMdtConversationStream({
       conversationId,
@@ -134,6 +163,7 @@ export const api = {
       locale: payload.locale,
       settings,
       onEvent,
+      options,
     })
   },
 }

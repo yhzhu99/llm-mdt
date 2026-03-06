@@ -7,6 +7,7 @@ import type {
   ChatCompletionClient,
   ChatCompletionMessage,
   ConversationRepository,
+  MdtRunPersistenceOptions,
   MdtEventHandler,
   MdtStreamEvent,
   ParsedStage2Ranking,
@@ -300,6 +301,7 @@ export async function runMdtConversationStream({
   locale = 'zh-CN',
   settings,
   onEvent,
+  options,
   conversationRepo = conversationStore,
   client = { chatCompletion, chatCompletionStream },
 }: {
@@ -308,6 +310,7 @@ export async function runMdtConversationStream({
   locale?: AppLocale
   settings: ProviderSettings
   onEvent?: MdtEventHandler
+  options?: MdtRunPersistenceOptions
   conversationRepo?: ConversationRepository
   client?: ChatCompletionClient
 }) {
@@ -326,12 +329,17 @@ export async function runMdtConversationStream({
     throw new Error(translate(locale, 'orchestratorConversationNotFound'))
   }
 
-  const isFirstMessage = (conversation.messages || []).length === 0
+  const isFirstMessage =
+    typeof options?.shouldGenerateTitle === 'boolean'
+      ? options.shouldGenerateTitle
+      : (conversation.messages || []).length === 0
   const titlePromise = isFirstMessage
     ? generateConversationTitle(content, settings, client, locale)
     : Promise.resolve<string | null>(null)
 
-  await conversationRepo.addUserMessage(conversationId, content)
+  if (options?.persistUserMessage !== false) {
+    await conversationRepo.addUserMessage(conversationId, content)
+  }
 
   let stage1Results: Stage1Result[] = []
   let stage2Results: Stage2Result[] = []
@@ -463,14 +471,46 @@ export async function runMdtConversationStream({
     emit({ type: 'title_complete', data: { title } })
   }
 
-  await conversationRepo.addAssistantMessage(conversationId, {
-    id: createId('assistant'),
-    stage1: stage1Results,
-    stage2: stage2Results,
-    stage3: stage3Result,
-    metadata,
-    created_at: new Date().toISOString(),
-  })
+  if (options?.assistantMessageId) {
+    const latestConversation = await conversationRepo.getConversation(conversationId)
+    if (!latestConversation) {
+      throw new Error(translate(locale, 'orchestratorConversationNotFound'))
+    }
+
+    const messageIndex = latestConversation.messages.findIndex(
+      (message) => message.role === 'assistant' && message.id === options.assistantMessageId,
+    )
+
+    const nextAssistantMessage = {
+      id: options.assistantMessageId,
+      role: 'assistant' as const,
+      stage1: stage1Results,
+      stage2: stage2Results,
+      stage3: stage3Result,
+      metadata,
+      created_at:
+        options.assistantMessageCreatedAt ||
+        (messageIndex >= 0 ? latestConversation.messages[messageIndex]?.created_at : undefined) ||
+        new Date().toISOString(),
+    }
+
+    if (messageIndex >= 0) {
+      latestConversation.messages[messageIndex] = nextAssistantMessage
+    } else {
+      latestConversation.messages.push(nextAssistantMessage)
+    }
+
+    await conversationRepo.saveConversation(latestConversation)
+  } else {
+    await conversationRepo.addAssistantMessage(conversationId, {
+      id: createId('assistant'),
+      stage1: stage1Results,
+      stage2: stage2Results,
+      stage3: stage3Result,
+      metadata,
+      created_at: new Date().toISOString(),
+    })
+  }
 
   emit({ type: 'complete' })
 }
