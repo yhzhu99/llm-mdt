@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
 import TopBar from './components/TopBar';
+import SettingsDialog from './components/SettingsDialog';
 import { api } from './api';
 import './App.css';
 
@@ -12,17 +13,16 @@ const groupConversationsByDate = (conversations) => {
   );
 
   const toDateKey = (iso) => {
-    const d = new Date(iso);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
-      d.getDate()
+    const date = new Date(iso);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+      date.getDate()
     ).padStart(2, '0')}`;
   };
 
-  // Preserve insertion order of date keys (newest -> oldest)
   const dateKeys = [];
   const seen = new Set();
-  for (const conv of sorted) {
-    const key = toDateKey(conv.created_at);
+  for (const conversation of sorted) {
+    const key = toDateKey(conversation.created_at);
     if (!seen.has(key)) {
       seen.add(key);
       dateKeys.push(key);
@@ -30,14 +30,48 @@ const groupConversationsByDate = (conversations) => {
   }
 
   for (const key of dateKeys) groups[key] = [];
-  for (const conv of sorted) {
-    const key = toDateKey(conv.created_at);
+  for (const conversation of sorted) {
+    const key = toDateKey(conversation.created_at);
     if (!groups[key]) groups[key] = [];
-    groups[key].push(conv);
+    groups[key].push(conversation);
   }
 
   return groups;
 };
+
+function getRuntimeConfig(settings) {
+  return {
+    configured: Boolean(
+      settings?.baseUrl &&
+        settings?.apiKey &&
+        settings?.chairmanModel &&
+        Array.isArray(settings?.councilModels) &&
+        settings.councilModels.length > 0
+    ),
+    council_models: settings?.councilModels || [],
+    chairman_model: settings?.chairmanModel || '',
+    title_model: settings?.titleModel || settings?.chairmanModel || '',
+    base_url: settings?.baseUrl || '',
+  };
+}
+
+function getProviderHost(baseUrl) {
+  try {
+    return new URL(baseUrl).host;
+  } catch {
+    return '';
+  }
+}
+
+function getProviderStatusText(status, settings, errorMessage) {
+  if (status === 'running') return 'Running MDT locally';
+  if (status === 'error') return errorMessage || 'Provider error';
+  if (status === 'ready') {
+    const host = getProviderHost(settings?.baseUrl);
+    return host ? `Ready · ${host}` : 'Ready';
+  }
+  return 'Configure local provider';
+}
 
 function App() {
   const [conversations, setConversations] = useState([]);
@@ -45,106 +79,119 @@ function App() {
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isRefreshingAfterStream, setIsRefreshingAfterStream] = useState(false);
-  const [runtimeConfig, setRuntimeConfig] = useState(null);
-  // Draft conversation: created when user lands on main panel and starts typing.
-  // It is NOT added to the sidebar until the first message is actually sent.
   const [draftConversationId, setDraftConversationId] = useState(null);
+  const [providerSettings, setProviderSettings] = useState(null);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsError, setSettingsError] = useState('');
+  const [lastProviderError, setLastProviderError] = useState('');
   const [isSidebarCollapsed] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState('connecting'); // connected | connecting | disconnected
+
+  const runtimeConfig = useMemo(
+    () => getRuntimeConfig(providerSettings),
+    [providerSettings]
+  );
+  const providerConfigured = runtimeConfig.configured;
+  const providerStatus = isLoading
+    ? 'running'
+    : lastProviderError
+      ? 'error'
+      : providerConfigured
+        ? 'ready'
+        : 'unconfigured';
+  const providerStatusText = getProviderStatusText(
+    providerStatus,
+    providerSettings,
+    lastProviderError
+  );
 
   const loadConversations = async () => {
     try {
-      const convs = await api.listConversations();
-      setConversations(convs);
+      const nextConversations = await api.listConversations();
+      setConversations(nextConversations);
     } catch (error) {
       console.error('Failed to load conversations:', error);
     }
   };
 
-  const upsertConversationInSidebar = (conv) => {
-    if (!conv?.id) return;
+  const loadProviderSettings = async () => {
+    try {
+      const settings = await api.getProviderSettings();
+      setProviderSettings(settings);
+    } catch (error) {
+      console.error('Failed to load provider settings:', error);
+      setLastProviderError('Failed to load local settings');
+    }
+  };
+
+  const loadConversation = useCallback(async (id) => {
+    try {
+      const conversation = await api.getConversation(id);
+      setCurrentConversation(conversation);
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+      if (currentConversationId === id) {
+        setCurrentConversation(null);
+      }
+    }
+  }, [currentConversationId]);
+
+  const upsertConversationInSidebar = (conversation) => {
+    if (!conversation?.id) return;
     setConversations((prev) => {
       const list = Array.isArray(prev) ? prev : [];
-      const idx = list.findIndex((c) => c?.id === conv.id);
+      const index = list.findIndex((entry) => entry?.id === conversation.id);
       const next = [...list];
-      if (idx === -1) {
-        next.unshift(conv);
+      if (index === -1) {
+        next.unshift(conversation);
       } else {
-        next[idx] = { ...next[idx], ...conv };
+        next[index] = { ...next[index], ...conversation };
       }
-      // keep newest first
       next.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       return next;
     });
   };
 
-  const loadConversation = async (id) => {
-    try {
-      const conv = await api.getConversation(id);
-      setCurrentConversation(conv);
-    } catch (error) {
-      console.error('Failed to load conversation:', error);
-    }
-  };
-
-  // Load conversations on mount
   useEffect(() => {
     loadConversations();
+    loadProviderSettings();
   }, []);
 
-  // Load runtime config (model order) on mount.
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        const cfg = await api.getConfig();
-        if (!alive) return;
-        setRuntimeConfig(cfg);
-      } catch (error) {
-        // Non-fatal; UI can still operate, but model order may be less stable.
-        console.warn('Failed to load runtime config:', error);
-      }
-    })();
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // Periodic health check (drive connection status dot like MedX).
-  useEffect(() => {
-    let alive = true;
-    let timer = null;
-
-    const tick = async () => {
-      if (!alive) return;
-      setConnectionStatus((prev) => (prev === 'connected' ? 'connected' : 'connecting'));
-      try {
-        await api.health();
-        if (!alive) return;
-        setConnectionStatus('connected');
-      } catch {
-        if (!alive) return;
-        setConnectionStatus('disconnected');
-      }
-    };
-
-    tick();
-    timer = window.setInterval(tick, 4000);
-    return () => {
-      alive = false;
-      if (timer) window.clearInterval(timer);
-    };
-  }, []);
-
-  // Load conversation details when selected
-  useEffect(() => {
-    // Important: avoid reloading from disk while streaming.
-    // Reloading replaces `currentConversation` (and wipes `stream/*` state),
-    // causing all subsequent stream updates to become no-ops.
     if (currentConversationId && !isLoading && !isRefreshingAfterStream) {
       loadConversation(currentConversationId);
     }
-  }, [currentConversationId, isLoading, isRefreshingAfterStream]);
+  }, [currentConversationId, isLoading, isRefreshingAfterStream, loadConversation]);
+
+  const handleOpenSettings = () => {
+    setSettingsError('');
+    setIsSettingsOpen(true);
+  };
+
+  const handleSaveSettings = async (nextSettings) => {
+    try {
+      const saved = await api.saveProviderSettings(nextSettings);
+      setProviderSettings(saved);
+      setSettingsError('');
+      setLastProviderError('');
+      setIsSettingsOpen(false);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSettingsError(message);
+      throw error;
+    }
+  };
+
+  const handleClearSettings = async () => {
+    try {
+      const cleared = await api.clearProviderSettings();
+      setProviderSettings(cleared);
+      setSettingsError('');
+      setLastProviderError('');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setSettingsError(message);
+    }
+  };
 
   const handleNewConversation = () => {
     setCurrentConversationId(null);
@@ -183,20 +230,24 @@ function App() {
   const ensureConversationForSend = async () => {
     if (currentConversationId) return currentConversationId;
 
-    // If user is sending from the landing page, lazily create a draft conversation
-    // (kept out of the sidebar until a message is successfully sent).
     if (draftConversationId) {
       setCurrentConversationId(draftConversationId);
       return draftConversationId;
     }
 
-    const newConv = await api.createConversation();
-    setDraftConversationId(newConv.id);
-    setCurrentConversationId(newConv.id);
-    return newConv.id;
+    const newConversation = await api.createConversation();
+    setDraftConversationId(newConversation.id);
+    setCurrentConversationId(newConversation.id);
+    return newConversation.id;
   };
 
   const handleSendMessage = async (content) => {
+    if (!providerConfigured) {
+      setLastProviderError('Configure a browser-capable provider before sending a message.');
+      handleOpenSettings();
+      return;
+    }
+
     let conversationIdForRequest;
 
     try {
@@ -206,10 +257,11 @@ function App() {
       return;
     }
 
+    setLastProviderError('');
     setIsLoading(true);
     setIsRefreshingAfterStream(false);
+
     try {
-      // Ensure we have a local conversation object for optimistic UI.
       setCurrentConversation((prev) => {
         if (prev) return prev;
         return {
@@ -221,8 +273,6 @@ function App() {
       });
 
       const optimisticCreatedAt = currentConversation?.created_at || new Date().toISOString();
-
-      // Optimistically show this conversation in the sidebar immediately.
       upsertConversationInSidebar({
         id: conversationIdForRequest,
         created_at: optimisticCreatedAt,
@@ -230,18 +280,25 @@ function App() {
         message_count: 1,
       });
 
-      // Optimistically add user message to UI
       const userMessage = { role: 'user', content };
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...(prev?.messages || []), userMessage],
-      }));
+      setCurrentConversation((prev) => {
+        const baseConversation = prev || {
+          id: conversationIdForRequest,
+          created_at: optimisticCreatedAt,
+          title: 'New Conversation',
+          messages: [],
+        };
+
+        return {
+          ...baseConversation,
+          messages: [...(baseConversation.messages || []), userMessage],
+        };
+      });
 
       const assistantMessageId =
         (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
         `assistant_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 
-      // Create a partial assistant message that will be updated progressively
       const councilOrder = runtimeConfig?.council_models || [];
       const assistantMessage = {
         id: assistantMessageId,
@@ -256,9 +313,9 @@ function App() {
           stage3: { response: '', thinking: '' },
         },
         streamMeta: {
-          stage1: Object.fromEntries(councilOrder.map((m) => [m, { status: 'idle' }])),
-          stage2: Object.fromEntries(councilOrder.map((m) => [m, { status: 'idle' }])),
-          stage3: { status: 'idle' }, // idle | running | complete | error
+          stage1: Object.fromEntries(councilOrder.map((model) => [model, { status: 'idle' }])),
+          stage2: Object.fromEntries(councilOrder.map((model) => [model, { status: 'idle' }])),
+          stage3: { status: 'idle' },
         },
         loading: {
           stage1: false,
@@ -267,17 +324,25 @@ function App() {
         },
       };
 
-      // Add the partial assistant message
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: [...(prev?.messages || []), assistantMessage],
-      }));
+      setCurrentConversation((prev) => {
+        const baseConversation = prev || {
+          id: conversationIdForRequest,
+          created_at: optimisticCreatedAt,
+          title: 'New Conversation',
+          messages: [],
+        };
+
+        return {
+          ...baseConversation,
+          messages: [...(baseConversation.messages || []), assistantMessage],
+        };
+      });
 
       const updateAssistantMessage = (recipeFn) => {
         setCurrentConversation((prev) => {
           if (!prev) return prev;
           const index = prev.messages.findIndex(
-            (m) => m.role === 'assistant' && m.id === assistantMessageId
+            (message) => message.role === 'assistant' && message.id === assistantMessageId
           );
           if (index === -1) return prev;
 
@@ -294,7 +359,6 @@ function App() {
         });
       };
 
-      // Coalesce high-frequency stream updates to reduce re-render churn.
       const streamUpdateQueueRef = { current: [] };
       const streamUpdateScheduledRef = { current: false };
       const enqueueAssistantUpdate = (fn) => {
@@ -303,41 +367,37 @@ function App() {
         streamUpdateScheduledRef.current = true;
         window.requestAnimationFrame(() => {
           streamUpdateScheduledRef.current = false;
-          const fns = streamUpdateQueueRef.current;
+          const queued = streamUpdateQueueRef.current;
           streamUpdateQueueRef.current = [];
-          if (fns.length === 0) return;
-          updateAssistantMessage((msg) => fns.reduce((acc, one) => one(acc), msg));
+          if (queued.length === 0) return;
+          updateAssistantMessage((message) => queued.reduce((acc, currentFn) => currentFn(acc), message));
         });
       };
 
-      // Send message with streaming
       let receivedCompleteEvent = false;
-      await api.sendMessageStream(
-        conversationIdForRequest,
-        { content },
-        (eventType, event) => {
+      await api.sendMessageStream(conversationIdForRequest, { content }, (eventType, event) => {
         switch (eventType) {
           case 'stage1_start':
-            updateAssistantMessage((msg) => ({
-              ...msg,
-              loading: { ...msg.loading, stage1: true },
+            updateAssistantMessage((message) => ({
+              ...message,
+              loading: { ...message.loading, stage1: true },
             }));
             break;
 
           case 'stage1_model_start':
-            enqueueAssistantUpdate((msg) => ({
-              ...msg,
+            enqueueAssistantUpdate((message) => ({
+              ...message,
               stream: {
-                ...msg.stream,
+                ...message.stream,
                 stage1: {
-                  ...msg.stream.stage1,
+                  ...message.stream.stage1,
                   [event.model]: { response: '', thinking: '' },
                 },
               },
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage1: {
-                  ...msg.streamMeta.stage1,
+                  ...message.streamMeta.stage1,
                   [event.model]: { status: 'running' },
                 },
               },
@@ -345,29 +405,32 @@ function App() {
             break;
 
           case 'stage1_model_delta':
-            enqueueAssistantUpdate((msg) => {
-              const prev = msg.stream?.stage1?.[event.model] || { response: '', thinking: '' };
-              const next = { ...prev };
+            enqueueAssistantUpdate((message) => {
+              const previous = message.stream?.stage1?.[event.model] || {
+                response: '',
+                thinking: '',
+              };
+              const next = { ...previous };
               if (event.delta_type === 'content') next.response += event.text || '';
               if (event.delta_type === 'reasoning') next.thinking += event.text || '';
               return {
-                ...msg,
+                ...message,
                 stream: {
-                  ...msg.stream,
-                  stage1: { ...msg.stream.stage1, [event.model]: next },
+                  ...message.stream,
+                  stage1: { ...message.stream.stage1, [event.model]: next },
                 },
               };
             });
             break;
 
           case 'stage1_model_error':
-            console.error('Stage1 model error:', event.model, event.message);
-            enqueueAssistantUpdate((msg) => ({
-              ...msg,
+            console.error('Stage 1 model error:', event.model, event.message);
+            enqueueAssistantUpdate((message) => ({
+              ...message,
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage1: {
-                  ...msg.streamMeta.stage1,
+                  ...message.streamMeta.stage1,
                   [event.model]: { status: 'error', message: event.message },
                 },
               },
@@ -375,43 +438,47 @@ function App() {
             break;
 
           case 'stage1_complete':
-            updateAssistantMessage((msg) => ({
-              ...msg,
+            updateAssistantMessage((message) => ({
+              ...message,
               stage1: event.data,
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage1: Object.fromEntries(
-                  Object.keys(msg.streamMeta?.stage1 || {}).map((m) => ([
-                    m,
-                    { status: (event.data || []).some((r) => r?.model === m) ? 'complete' : (msg.streamMeta?.stage1?.[m]?.status || 'idle') },
-                  ]))
+                  Object.keys(message.streamMeta?.stage1 || {}).map((model) => [
+                    model,
+                    {
+                      status: (event.data || []).some((result) => result?.model === model)
+                        ? 'complete'
+                        : message.streamMeta?.stage1?.[model]?.status || 'idle',
+                    },
+                  ])
                 ),
               },
-              loading: { ...msg.loading, stage1: false },
+              loading: { ...message.loading, stage1: false },
             }));
             break;
 
           case 'stage2_start':
-            updateAssistantMessage((msg) => ({
-              ...msg,
-              loading: { ...msg.loading, stage2: true },
+            updateAssistantMessage((message) => ({
+              ...message,
+              loading: { ...message.loading, stage2: true },
             }));
             break;
 
           case 'stage2_model_start':
-            enqueueAssistantUpdate((msg) => ({
-              ...msg,
+            enqueueAssistantUpdate((message) => ({
+              ...message,
               stream: {
-                ...msg.stream,
+                ...message.stream,
                 stage2: {
-                  ...msg.stream.stage2,
+                  ...message.stream.stage2,
                   [event.model]: { ranking: '', thinking: '' },
                 },
               },
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage2: {
-                  ...msg.streamMeta.stage2,
+                  ...message.streamMeta.stage2,
                   [event.model]: { status: 'running' },
                 },
               },
@@ -419,29 +486,32 @@ function App() {
             break;
 
           case 'stage2_model_delta':
-            enqueueAssistantUpdate((msg) => {
-              const prev = msg.stream?.stage2?.[event.model] || { ranking: '', thinking: '' };
-              const next = { ...prev };
+            enqueueAssistantUpdate((message) => {
+              const previous = message.stream?.stage2?.[event.model] || {
+                ranking: '',
+                thinking: '',
+              };
+              const next = { ...previous };
               if (event.delta_type === 'content') next.ranking += event.text || '';
               if (event.delta_type === 'reasoning') next.thinking += event.text || '';
               return {
-                ...msg,
+                ...message,
                 stream: {
-                  ...msg.stream,
-                  stage2: { ...msg.stream.stage2, [event.model]: next },
+                  ...message.stream,
+                  stage2: { ...message.stream.stage2, [event.model]: next },
                 },
               };
             });
             break;
 
           case 'stage2_model_error':
-            console.error('Stage2 model error:', event.model, event.message);
-            enqueueAssistantUpdate((msg) => ({
-              ...msg,
+            console.error('Stage 2 model error:', event.model, event.message);
+            enqueueAssistantUpdate((message) => ({
+              ...message,
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage2: {
-                  ...msg.streamMeta.stage2,
+                  ...message.streamMeta.stage2,
                   [event.model]: { status: 'error', message: event.message },
                 },
               },
@@ -449,74 +519,80 @@ function App() {
             break;
 
           case 'stage2_complete':
-            updateAssistantMessage((msg) => ({
-              ...msg,
+            updateAssistantMessage((message) => ({
+              ...message,
               stage2: event.data,
               metadata: event.metadata,
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage2: Object.fromEntries(
-                  Object.keys(msg.streamMeta?.stage2 || {}).map((m) => ([
-                    m,
-                    { status: (event.data || []).some((r) => r?.model === m) ? 'complete' : (msg.streamMeta?.stage2?.[m]?.status || 'idle') },
-                  ]))
+                  Object.keys(message.streamMeta?.stage2 || {}).map((model) => [
+                    model,
+                    {
+                      status: (event.data || []).some((result) => result?.model === model)
+                        ? 'complete'
+                        : message.streamMeta?.stage2?.[model]?.status || 'idle',
+                    },
+                  ])
                 ),
               },
-              loading: { ...msg.loading, stage2: false },
+              loading: { ...message.loading, stage2: false },
             }));
             break;
 
           case 'stage3_start':
-            updateAssistantMessage((msg) => ({
-              ...msg,
+            updateAssistantMessage((message) => ({
+              ...message,
               stream: {
-                ...msg.stream,
+                ...message.stream,
                 stage3: { response: '', thinking: '' },
               },
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage3: { status: 'running' },
               },
-              loading: { ...msg.loading, stage3: true },
+              loading: { ...message.loading, stage3: true },
             }));
             break;
 
           case 'stage3_delta':
-            enqueueAssistantUpdate((msg) => {
-              const prev = msg.stream?.stage3 || { response: '', thinking: '' };
-              const next = { ...prev };
+            enqueueAssistantUpdate((message) => {
+              const previous = message.stream?.stage3 || { response: '', thinking: '' };
+              const next = { ...previous };
               if (event.delta_type === 'content') next.response += event.text || '';
               if (event.delta_type === 'reasoning') next.thinking += event.text || '';
-              return { ...msg, stream: { ...msg.stream, stage3: next } };
+              return {
+                ...message,
+                stream: { ...message.stream, stage3: next },
+              };
             });
             break;
 
           case 'stage3_error':
-            console.error('Stage3 error:', event.message);
-            enqueueAssistantUpdate((msg) => ({
-              ...msg,
+            console.error('Stage 3 error:', event.message);
+            enqueueAssistantUpdate((message) => ({
+              ...message,
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage3: { status: 'error', message: event.message },
               },
             }));
+            setLastProviderError(event.message || 'Failed to complete final synthesis');
             break;
 
           case 'stage3_complete':
-            updateAssistantMessage((msg) => ({
-              ...msg,
+            updateAssistantMessage((message) => ({
+              ...message,
               stage3: event.data,
               streamMeta: {
-                ...msg.streamMeta,
+                ...message.streamMeta,
                 stage3: { status: 'complete' },
               },
-              loading: { ...msg.loading, stage3: false },
+              loading: { ...message.loading, stage3: false },
             }));
             break;
 
           case 'title_complete':
-            // Reload conversations to get updated title
-            // Optimistically patch title in sidebar immediately (server list refresh still happens later).
             if (event?.data?.title) {
               upsertConversationInSidebar({
                 id: conversationIdForRequest,
@@ -527,8 +603,6 @@ function App() {
             break;
 
           case 'complete':
-            // Stream complete: refresh sidebar list; conversation reload is handled
-            // by the post-stream refresh below (single canonical reload).
             receivedCompleteEvent = true;
             (async () => {
               await loadConversations();
@@ -538,40 +612,40 @@ function App() {
 
           case 'error':
             console.error('Stream error:', event.message);
+            setLastProviderError(event.message || 'Failed to run MDT');
             setIsLoading(false);
             break;
 
           default:
-            console.log('Unknown event type:', eventType);
+            break;
         }
       });
 
-      // Best-effort final refresh: covers cases where stream ends without `complete`
-      // (e.g. network interruption or parsing edge cases). Also ensures we end up
-      // with canonical server state (assistant message without client-only stream fields).
       setIsRefreshingAfterStream(true);
       await loadConversations();
       await loadConversation(conversationIdForRequest);
       setIsRefreshingAfterStream(false);
-
-      // If this message was sent in a draft conversation, it now has content
-      // and should appear in the sidebar.
       setDraftConversationId((prev) => (prev === conversationIdForRequest ? null : prev));
       if (!receivedCompleteEvent) setIsLoading(false);
     } catch (error) {
       console.error('Failed to send message:', error);
-      // Remove optimistic messages on error
-      setCurrentConversation((prev) => ({
-        ...prev,
-        messages: prev.messages.slice(0, -2),
-      }));
+      setLastProviderError(error instanceof Error ? error.message : String(error));
+      setCurrentConversation((prev) => {
+        if (!prev) return prev;
+        const messages = [...(prev.messages || [])];
+        if (messages.length >= 2) {
+          messages.splice(-2, 2);
+        }
+        return { ...prev, messages };
+      });
       setIsLoading(false);
       setIsRefreshingAfterStream(false);
     }
   };
 
   return (
-    <div className="app">
+    <>
+      <div className="app">
         <Sidebar
           conversations={conversations}
           groupedConversations={groupConversationsByDate(conversations)}
@@ -583,22 +657,35 @@ function App() {
           isCollapsed={isSidebarCollapsed}
           onToggleCollapsed={null}
         />
-      <div className="main">
-        <TopBar
-          title={currentConversation?.title || 'LLM MDT'}
-          status={connectionStatus}
-          onNewConversation={null}
-          onRefresh={null}
-        />
-        <ChatInterface
-          conversation={currentConversation}
-          onSendMessage={handleSendMessage}
-          isLoading={isLoading}
-          onNewConversation={handleNewConversation}
-          runtimeConfig={runtimeConfig}
-        />
+        <div className="main">
+          <TopBar
+            title={currentConversation?.title || 'LLM MDT'}
+            status={providerStatus}
+            statusText={providerStatusText}
+            onNewConversation={handleNewConversation}
+            onOpenSettings={handleOpenSettings}
+          />
+          <ChatInterface
+            conversation={currentConversation}
+            onSendMessage={handleSendMessage}
+            isLoading={isLoading}
+            runtimeConfig={runtimeConfig}
+            providerConfigured={providerConfigured}
+            providerStatus={providerStatus}
+            onOpenSettings={handleOpenSettings}
+          />
+        </div>
       </div>
-    </div>
+
+      <SettingsDialog
+        isOpen={isSettingsOpen}
+        settings={providerSettings}
+        error={settingsError}
+        onClose={() => setIsSettingsOpen(false)}
+        onSave={handleSaveSettings}
+        onClear={handleClearSettings}
+      />
+    </>
   );
 }
 

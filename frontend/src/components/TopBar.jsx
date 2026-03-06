@@ -3,29 +3,33 @@ import Button from './Button';
 
 export default function TopBar({
   title,
-  status = 'connected', // connected | connecting | disconnected
+  status = 'ready',
+  statusText = '',
   onNewConversation,
-  onRefresh,
+  onOpenSettings,
 }) {
-  const showActions = !!(onRefresh || onNewConversation);
+  const showActions = !!(onOpenSettings || onNewConversation);
 
   return (
     <header className="topbar">
       <div className="topbar-left">
-        <div className={`status-dot ${status}`} title={status} />
-        <div className="topbar-title">{title || 'LLM MDT'}</div>
+        <div className={`status-dot ${status}`} title={statusText || status} />
+        <div className="topbar-title-group">
+          <div className="topbar-title">{title || 'LLM MDT'}</div>
+          <div className="topbar-status-text">{statusText || status}</div>
+        </div>
       </div>
       {showActions ? (
         <div className="topbar-right">
-          {onRefresh ? (
+          {onOpenSettings ? (
             <Button
               variant="ghost"
-              className="topbar-btn"
+              className="topbar-btn topbar-btn-text"
               type="button"
-              onClick={onRefresh}
-              title="Refresh"
+              onClick={onOpenSettings}
+              title="Provider settings"
             >
-              ↻
+              Settings
             </Button>
           ) : null}
           {onNewConversation ? (

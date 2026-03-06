@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import Stage1 from './Stage1';
 import Stage2 from './Stage2';
 import Stage3 from './Stage3';
+import TraceLog from './TraceLog';
 import Markdown from './Markdown';
 import CopyButton from './CopyButton';
 import './ChatInterface.css';
@@ -37,6 +38,8 @@ export default function ChatInterface({
   onSendMessage,
   isLoading,
   runtimeConfig,
+  providerConfigured,
+  onOpenSettings,
 }) {
   const [input, setInput] = useState('');
   const messagesEndRef = useRef(null);
@@ -106,12 +109,29 @@ export default function ChatInterface({
     autosizeTextarea();
   }, [input]);
 
-  const canSend = input.trim().length > 0 && !isLoading;
+  const canSend = input.trim().length > 0 && !isLoading && providerConfigured;
   const councilOrder = runtimeConfig?.council_models || [];
 
   const isSingleTurnLocked = !!conversation?.messages?.some((m) => m?.role === 'user');
 
   if (!conversation) {
+    if (!providerConfigured) {
+      return (
+        <div className="chat-interface">
+          <div className="empty-state">
+            <h2>Configure your browser provider</h2>
+            <p>LLM MDT runs entirely in this browser and stores your settings locally.</p>
+
+            <div className="empty-actions">
+              <button type="button" className="primary-action" onClick={onOpenSettings}>
+                Open Settings
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div className="chat-interface">
         <div className="empty-state">
@@ -152,8 +172,22 @@ export default function ChatInterface({
       <div className="messages-container">
         {conversation.messages.length === 0 ? (
           <div className="empty-state">
-            <h2>Start a conversation</h2>
-            <p>Ask a question to consult the LLM MDT</p>
+            {providerConfigured ? (
+              <>
+                <h2>Start a conversation</h2>
+                <p>Ask a question to consult the LLM MDT</p>
+              </>
+            ) : (
+              <>
+                <h2>Provider setup required</h2>
+                <p>Configure a browser-capable endpoint before starting a new MDT run.</p>
+                <div className="empty-actions">
+                  <button type="button" className="primary-action" onClick={onOpenSettings}>
+                    Open Settings
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         ) : (
           conversation.messages.map((msg, index) => (
@@ -255,6 +289,8 @@ export default function ChatInterface({
                     <Stage3 finalResponse={msg.stage3} streamState={msg.stream?.stage3} streamMeta={msg.streamMeta?.stage3} />
                   )}
 
+                  <TraceLog assistantMessage={msg} />
+
                       </>
                     );
                   })()}
@@ -277,7 +313,7 @@ export default function ChatInterface({
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isLoading}
+            disabled={isLoading || !providerConfigured}
             rows={3}
           />
 
@@ -299,6 +335,11 @@ export default function ChatInterface({
               <span className="kbd">Shift</span>+<span className="kbd">Enter</span> newline
             </div>
             {isLoading ? <div className="hint-sub">Generating…</div> : null}
+            {!providerConfigured ? (
+              <div className="hint-sub">
+                Configure provider settings to start a browser-only MDT run.
+              </div>
+            ) : null}
           </div>
         </form>
       )}

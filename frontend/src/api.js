@@ -1,198 +1,102 @@
-/**
- * API client for the LLM MDT backend.
- */
+import { conversationStore } from './services/conversationStore';
+import { runMdtConversationStream } from './services/mdtOrchestrator';
+import {
+  isProviderConfigured,
+  settingsStore,
+} from './services/providerSettings';
 
-const API_BASE = 'http://localhost:8001';
+function toRuntimeConfig(settings) {
+  return {
+    configured: isProviderConfigured(settings),
+    council_models: settings?.councilModels || [],
+    chairman_model: settings?.chairmanModel || '',
+    title_model: settings?.titleModel || settings?.chairmanModel || '',
+    base_url: settings?.baseUrl || '',
+  };
+}
 
 export const api = {
-  /**
-   * List all conversations.
-   */
   async listConversations() {
-    const response = await fetch(`${API_BASE}/api/conversations`);
-    if (!response.ok) {
-      throw new Error('Failed to list conversations');
-    }
-    return response.json();
+    return conversationStore.listConversations();
   },
 
-  /**
-   * Health check (used for UI connection status).
-   */
   async health() {
-    const response = await fetch(`${API_BASE}/`);
-    if (!response.ok) {
-      throw new Error('Health check failed');
-    }
-    return response.json();
+    const settings = await settingsStore.get();
+    return {
+      status: isProviderConfigured(settings) ? 'ready' : 'unconfigured',
+      mode: 'browser-only',
+    };
   },
 
-  /**
-   * Fetch client-safe runtime config (model order, chairman).
-   */
   async getConfig() {
-    const response = await fetch(`${API_BASE}/api/config`);
-    if (!response.ok) {
-      throw new Error('Failed to fetch config');
-    }
-    return response.json();
+    return toRuntimeConfig(await settingsStore.get());
   },
 
-  /**
-   * Create a new conversation.
-   */
+  async getProviderSettings() {
+    return settingsStore.get();
+  },
+
+  async saveProviderSettings(settings) {
+    return settingsStore.save(settings);
+  },
+
+  async clearProviderSettings() {
+    return settingsStore.clear();
+  },
+
   async createConversation() {
-    const response = await fetch(`${API_BASE}/api/conversations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({}),
-    });
-    if (!response.ok) {
-      throw new Error('Failed to create conversation');
-    }
-    return response.json();
+    return conversationStore.createConversation();
   },
 
-  /**
-   * Get a specific conversation.
-   */
   async getConversation(conversationId) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`
-    );
-    if (!response.ok) {
+    const conversation = await conversationStore.getConversation(conversationId);
+    if (!conversation) {
       throw new Error('Failed to get conversation');
     }
-    return response.json();
+    return conversation;
   },
 
-  /**
-   * Delete a conversation.
-   */
   async deleteConversation(conversationId) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`,
-      { method: 'DELETE' }
-    );
-    if (!response.ok) {
+    const deleted = await conversationStore.deleteConversation(conversationId);
+    if (!deleted) {
       throw new Error('Failed to delete conversation');
     }
-    return response.json();
+    return { ok: true };
   },
 
-  /**
-   * Rename a conversation (set title).
-   */
   async renameConversation(conversationId, title) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}`,
-      {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ title }),
-      }
-    );
-    if (!response.ok) {
-      throw new Error('Failed to rename conversation');
-    }
-    return response.json();
+    return conversationStore.updateConversationTitle(conversationId, title);
   },
 
-  /**
-   * Send a message in a conversation.
-   */
   async sendMessage(conversationId, payload) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/message`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-    if (!response.ok) {
-      throw new Error('Failed to send message');
-    }
-    return response.json();
-  },
-
-  /**
-   * Send a message and receive streaming updates.
-   * @param {string} conversationId - The conversation ID
-   * @param {string} content - The message content
-   * @param {function} onEvent - Callback function for each event: (eventType, data) => void
-   * @returns {Promise<void>}
-   */
-  async sendMessageStream(conversationId, payload, onEvent) {
-    const response = await fetch(
-      `${API_BASE}/api/conversations/${conversationId}/message/stream`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error('Failed to send message');
-    }
-
-    if (!response.body) {
-      throw new Error('Streaming response body is empty');
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-
-    const parseEventBlock = (block) => {
-      // SSE event is a set of lines; we only care about one or more `data:` lines.
-      const lines = block.split(/\r?\n/);
-      const dataLines = [];
-      for (const line of lines) {
-        if (line.startsWith('data:')) {
-          dataLines.push(line.slice(5).trimStart());
-        }
-      }
-      if (dataLines.length === 0) return;
-
-      const data = dataLines.join('\n');
-      try {
-        const event = JSON.parse(data);
-        onEvent(event.type, event);
-      } catch (e) {
-        console.error('Failed to parse SSE event:', e, { data });
-      }
+    const result = {
+      stage1: [],
+      stage2: [],
+      stage3: null,
+      metadata: null,
     };
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-
-      // SSE events are separated by a blank line.
-      // Keep the last partial block in `buffer` if it's incomplete.
-      const parts = buffer.split(/\r?\n\r?\n/);
-      buffer = parts.pop() ?? '';
-      for (const part of parts) {
-        if (part.trim().length === 0) continue;
-        parseEventBlock(part);
+    await this.sendMessageStream(conversationId, payload, (eventType, event) => {
+      if (eventType === 'stage1_complete') {
+        result.stage1 = event.data || [];
+      } else if (eventType === 'stage2_complete') {
+        result.stage2 = event.data || [];
+        result.metadata = event.metadata || null;
+      } else if (eventType === 'stage3_complete') {
+        result.stage3 = event.data || null;
       }
-    }
+    });
 
-    // Flush any remaining complete event (best-effort).
-    const tail = buffer.trim();
-    if (tail.length > 0) {
-      parseEventBlock(tail);
-    }
+    return result;
+  },
+
+  async sendMessageStream(conversationId, payload, onEvent) {
+    const settings = await settingsStore.get();
+    return runMdtConversationStream({
+      conversationId,
+      content: payload?.content || '',
+      settings,
+      onEvent,
+    });
   },
 };
