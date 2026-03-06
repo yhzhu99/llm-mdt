@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { LoaderCircle, Sparkles } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
@@ -24,6 +24,7 @@ interface ModelStreamMeta {
 }
 
 const props = defineProps<{
+  id?: string
   responses: StageOneResponse[]
   streamState?: Record<string, ModelStreamState>
   streamMeta?: Record<string, ModelStreamMeta>
@@ -33,6 +34,7 @@ const props = defineProps<{
 const { t } = useI18n()
 const activeTab = ref(0)
 const showThinking = ref(false)
+const manualSelection = ref(false)
 
 const tabs = computed(() => {
   const preferred = props.councilOrder?.filter(Boolean) ?? []
@@ -63,19 +65,117 @@ const hasStartedMainOutput = (model: string) => {
   return Boolean((finalized && finalized.length > 0) || (streamed && streamed.length > 0))
 }
 
+const modelStatus = (model: string) => {
+  if (props.responses.some((response) => response.model === model)) {
+    return 'complete' as const
+  }
+
+  return props.streamMeta?.[model]?.status || 'idle'
+}
+
 const isThinking = (model: string) =>
   props.streamMeta?.[model]?.status === 'running' && !hasStartedMainOutput(model)
 
 const shortModelName = (model: string) => model.split('/')[1] || model
+
+const statusCounts = computed(() => {
+  const counts = {
+    total: tabs.value.length,
+    running: 0,
+    complete: 0,
+    error: 0,
+    waiting: 0,
+  }
+
+  for (const model of tabs.value) {
+    const status = modelStatus(model)
+    if (status === 'running') counts.running += 1
+    else if (status === 'complete') counts.complete += 1
+    else if (status === 'error') counts.error += 1
+    else counts.waiting += 1
+  }
+
+  return counts
+})
+
+const activeStatusLabel = computed(() => {
+  const status = modelStatus(activeModel.value)
+  if (status === 'running' && !hasStartedMainOutput(activeModel.value)) return t('stageStatusThinking')
+  if (status === 'running') return t('stageStatusGenerating')
+  if (status === 'complete') return t('stageStatusComplete')
+  if (status === 'error') return t('stageStatusError')
+  return t('stageStatusWaiting')
+})
+
+watch(
+  tabs,
+  (models) => {
+    if (!models.length) {
+      activeTab.value = 0
+      return
+    }
+
+    if (models[activeTab.value]) return
+    activeTab.value = 0
+  },
+  { immediate: true },
+)
+
+watch(
+  () => [props.responses, props.streamMeta, props.streamState] as const,
+  () => {
+    if (!tabs.value.length) return
+    if (manualSelection.value && tabs.value[activeTab.value]) return
+
+    const nextModel =
+      tabs.value.find((model) => props.streamMeta?.[model]?.status === 'running') ||
+      tabs.value.find((model) => hasStartedMainOutput(model)) ||
+      tabs.value[0]
+
+    if (!nextModel) return
+
+    const nextIndex = tabs.value.indexOf(nextModel)
+    if (nextIndex >= 0) {
+      activeTab.value = nextIndex
+    }
+  },
+  { deep: true, immediate: true },
+)
+
+const selectModel = (index: number) => {
+  manualSelection.value = true
+  activeTab.value = index
+}
 </script>
 
 <template>
   <StageCard
     v-if="tabs.length > 0"
+    :id="id"
     :title="t('stage1Title')"
     :subtitle="t('stage1Subtitle')"
   >
     <div class="space-y-4">
+      <div class="flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-background/80 px-4 py-3 text-xs text-muted-foreground">
+        <span class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
+          <LoaderCircle v-if="statusCounts.running > 0" :size="12" class="animate-spin" />
+          <Sparkles v-else :size="12" />
+          {{ t('stageInspectModel') }}
+        </span>
+        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
+          {{ t('consultationLiveModels') }} {{ statusCounts.running }}/{{ statusCounts.total }}
+        </span>
+        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
+          {{ t('consultationCompletedModels') }} {{ statusCounts.complete }}
+        </span>
+        <span
+          v-if="activeModel"
+          class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1"
+        >
+          {{ shortModelName(activeModel) }} · {{ activeStatusLabel }}
+        </span>
+      </div>
+
       <div class="flex flex-wrap gap-2">
         <button
           v-for="(model, index) in tabs"
@@ -89,15 +189,15 @@ const shortModelName = (model: string) => model.split('/')[1] || model
                 : 'border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground',
             )
           "
-          @click="activeTab = index"
+          @click="selectModel(index)"
         >
           <span
             :class="
               cn(
                 'h-2.5 w-2.5 rounded-full bg-muted-foreground/40',
-                props.streamMeta?.[model]?.status === 'running' && 'bg-primary',
-                props.streamMeta?.[model]?.status === 'complete' && 'bg-emerald-500',
-                props.streamMeta?.[model]?.status === 'error' && 'bg-destructive',
+                modelStatus(model) === 'running' && 'bg-primary',
+                modelStatus(model) === 'complete' && 'bg-emerald-500',
+                modelStatus(model) === 'error' && 'bg-destructive',
               )
             "
           />
@@ -109,6 +209,18 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             <LoaderCircle :size="12" class="animate-spin" />
             {{ t('stageThinking') }}
           </span>
+          <span
+            v-else-if="modelStatus(model) === 'complete'"
+            class="text-xs font-medium text-emerald-600"
+          >
+            {{ t('stageStatusComplete') }}
+          </span>
+          <span
+            v-else-if="modelStatus(model) === 'error'"
+            class="text-xs font-medium text-destructive"
+          >
+            {{ t('stageStatusError') }}
+          </span>
         </button>
       </div>
 
@@ -119,6 +231,9 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             {{ activeModel }}
           </div>
           <div class="flex items-center gap-2">
+            <span class="hidden rounded-full bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground sm:inline-flex">
+              {{ activeStatusLabel }}
+            </span>
             <CopyButton icon-only :title="t('copyResponse')" :get-text="() => responseText" />
             <button
               type="button"
@@ -142,9 +257,18 @@ const shortModelName = (model: string) => model.split('/')[1] || model
           <MarkdownRenderer
             v-if="responseText"
             :source="responseText"
-            class="prose-headings:mt-6 prose-p:my-3"
+            :class="cn(modelStatus(activeModel) === 'running' && 'streaming-prose', 'prose-headings:mt-6 prose-p:my-3')"
           />
-          <div v-else class="rounded-xl border border-dashed border-border bg-background/80 px-4 py-5 text-sm text-muted-foreground">
+          <div
+            v-else-if="modelStatus(activeModel) === 'error'"
+            class="rounded-xl border border-destructive/20 bg-destructive/5 px-4 py-5 text-sm text-destructive"
+          >
+            {{ props.streamMeta?.[activeModel]?.message || t('stageStatusError') }}
+          </div>
+          <div
+            v-else
+            class="rounded-xl border border-dashed border-border bg-background/80 px-4 py-5 text-sm text-muted-foreground"
+          >
             {{ t('stageWaitingResponse') }}
           </div>
 
@@ -158,7 +282,7 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             <MarkdownRenderer
               v-if="thinkingText"
               :source="thinkingText"
-              class="prose-p:my-2 prose-headings:mt-4"
+              :class="cn(props.streamMeta?.[activeModel]?.status === 'running' && 'streaming-prose', 'prose-p:my-2 prose-headings:mt-4')"
             />
             <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
           </div>

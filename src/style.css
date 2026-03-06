@@ -73,6 +73,7 @@
 
   html {
     @apply antialiased;
+    color-scheme: light;
   }
 
   body {
@@ -93,6 +94,18 @@
 
   .scrollbar-hide::-webkit-scrollbar {
     display: none;
+  }
+
+  .streaming-prose > :last-child::after {
+    content: '';
+    display: inline-block;
+    width: 0.45rem;
+    height: 1.1em;
+    margin-left: 0.12rem;
+    border-radius: 9999px;
+    vertical-align: text-bottom;
+    background: hsl(var(--primary) / 0.7);
+    animation: stream-caret 1.1s ease-in-out infinite;
   }
 }
 
@@ -171,5 +184,16 @@
 
   .prose :where(img):not(:where([class~='not-prose'], [class~='not-prose'] *)) {
     border-radius: 0.75rem;
+  }
+}
+
+@keyframes stream-caret {
+  0%,
+  100% {
+    opacity: 0.15;
+  }
+
+  50% {
+    opacity: 1;
   }
 }

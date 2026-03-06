@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import StageCard from './StageCard.vue'
+import { cn } from '@/utils'
 
 interface StageThreeResult {
   model: string
@@ -23,6 +24,7 @@ interface StageThreeStreamMeta {
 }
 
 const props = defineProps<{
+  id?: string
   finalResponse?: StageThreeResult | null
   streamState?: StageThreeStreamState
   streamMeta?: StageThreeStreamMeta
@@ -47,6 +49,7 @@ const statusText = computed(() => {
 <template>
   <StageCard
     v-if="responseText || thinkingText"
+    :id="id"
     :title="t('stage3Title')"
     :subtitle="`${t('stage3Subtitle')} (${modelName.split('/')[1] || modelName}) ${t('stageStatusDelimiter')} ${statusText}`"
   >
@@ -64,6 +67,20 @@ const statusText = computed(() => {
     </template>
 
     <div class="space-y-4">
+      <div class="flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-background/80 px-4 py-3 text-xs text-muted-foreground">
+        <span class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
+          <LoaderCircle v-if="props.streamMeta?.status === 'running'" :size="12" class="animate-spin" />
+          <Crown v-else :size="12" />
+          {{ t('stageInspectModel') }}
+        </span>
+        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
+          {{ modelName.split('/')[1] || modelName }}
+        </span>
+        <span class="inline-flex items-center gap-1 rounded-full bg-muted px-2.5 py-1">
+          {{ statusText }}
+        </span>
+      </div>
+
       <div
         v-if="props.streamMeta?.status === 'running' && !hasStartedMainOutput"
         class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
@@ -81,7 +98,7 @@ const statusText = computed(() => {
           <MarkdownRenderer
             v-if="responseText"
             :source="responseText"
-            class="prose-headings:mt-6 prose-p:my-3"
+            :class="cn(props.streamMeta?.status === 'running' && 'streaming-prose', 'prose-headings:mt-6 prose-p:my-3')"
           />
           <div v-else class="rounded-xl border border-dashed border-border bg-background/80 px-4 py-5 text-sm text-muted-foreground">
             {{ t('stageWaitingSynthesis') }}
@@ -99,7 +116,7 @@ const statusText = computed(() => {
         <MarkdownRenderer
           v-if="thinkingText"
           :source="thinkingText"
-          class="prose-p:my-2 prose-headings:mt-4"
+          :class="cn(props.streamMeta?.status === 'running' && 'streaming-prose', 'prose-p:my-2 prose-headings:mt-4')"
         />
         <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
       </div>
