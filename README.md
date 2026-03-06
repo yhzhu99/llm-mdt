@@ -3,112 +3,130 @@
 
   <h1>LLM MDT (Multi-Disciplinary Team)</h1>
 
-  <p><b>A local web app that treats LLMs as a medical-style Multidisciplinary Team.</b><br/>Models generate independently, review each other <i>anonymously</i>, and a Chairman synthesizes the perfect answer.</p>
+  <p><b>A frontend-only MDT app for comparing, reviewing, and synthesizing LLM answers directly in the browser.</b></p>
 
   <p>
     <a href="https://github.com/yhzhu99/llm-mdt/stargazers"><img src="https://img.shields.io/github/stars/yhzhu99/llm-mdt?style=flat-square&color=blue" alt="Stars"></a>
     <a href="https://github.com/yhzhu99/llm-mdt/network/members"><img src="https://img.shields.io/github/forks/yhzhu99/llm-mdt?style=flat-square&color=blue" alt="Forks"></a>
-    <img src="https://img.shields.io/badge/Python-3.10+-blue?style=flat-square&logo=python&logoColor=white" alt="Python">
-    <img src="https://img.shields.io/badge/React-Vite-61dafb?style=flat-square&logo=react&logoColor=black" alt="React">
+    <img src="https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb?style=flat-square&logo=react&logoColor=black" alt="React">
+    <img src="https://img.shields.io/badge/Deploy-Cloudflare%20Pages-f38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Pages">
   </p>
 </div>
 
 ---
 
-## 💡 The Core Problem It Solves
+## What Changed
 
-If you ask GPT-4, Claude, and Gemini to rate each other's answers, **they are heavily biased toward their own outputs or specific model names**.
+`llm-mdt` is now a **browser-only** application:
 
-`llm-mdt` solves this by introducing **Anonymized Peer Review**.
+- No Python backend
+- No server-side storage
+- No environment-variable setup for provider secrets
+- No deployment dependency beyond serving static files
 
-Based on our research paper [**ColaCare** (WWW 2025) 📄](https://arxiv.org/abs/2410.02551), this project implements a 3-stage deliberation pipeline that extracts the absolute best reasoning from multiple models without identity bias.
+The full MDT pipeline now runs in the frontend:
 
-<div align="center">
-  <img src="frontend/public/architecture.svg" alt="LLM MDT Architecture" width="90%" />
-</div>
+1. **Stage 1:** each council model answers independently
+2. **Stage 2:** models rank anonymized responses
+3. **Stage 3:** the chairman synthesizes the final answer
 
-## ✨ Features
+Conversations and provider settings are stored locally in the browser using IndexedDB, so the app can be deployed as a static site on Cloudflare Pages.
 
-- 🎭 **Anonymized Peer Review:** Responses are relabeled as *Response A, B, C* during Stage 2. Reviewers vote based on pure logic, not brand bias.
-- ⚡ **Local, ChatGPT-like UI:** A beautiful, responsive React frontend with streaming support.
-- 🔍 **Total Transparency:** Inspect raw outputs, reasoning (thinking) processes, and parsed rankings via a clean Tab interface.
-- 🛡️ **Graceful Degradation:** The council continues deliberation even if one API endpoint fails or times out.
-- 💾 **Local Storage:** Conversations are saved cleanly in local JSON files.
+## Features
 
-## 🚀 Setup & Installation
+- **Frontend-only MDT orchestration** with no runtime backend
+- **Anonymized peer review** to reduce model-name bias
+- **Streaming stage updates** for Stage 1, Stage 2, and Stage 3
+- **Local persistence** for chats, rankings, and trace metadata
+- **Provider configuration in the browser** for base URL, API key, council models, chairman model, and optional headers
+- **Cloudflare Pages friendly** static deployment
 
-### 1. Install Dependencies
+## Important Security Note
 
-We use [`uv`](https://docs.astral.sh/uv/) for blazing-fast Python environment management.
+This version intentionally stores provider settings **only in the local browser** because it is designed for personal/self-hosted usage.
 
-**Backend:**
-```bash
-cd backend
-uv sync
-```
+That means:
 
-**Frontend:**
+- your API key is **not** sent to a project backend
+- your API key **is still accessible in the browser** to anyone with access to that device/session
+- your provider endpoint must allow **direct browser CORS requests**
+
+This is convenient, but it is **not a secure secret-management model for shared or public-trust deployments**.
+
+## Quick Start
+
+### 1. Install frontend dependencies
+
 ```bash
 cd frontend
 npm install
-cd ..
 ```
 
-### 2. Configure API Keys
-
-This project uses an **OpenAI-compatible** Chat Completions endpoint. By default you can use **OpenRouter** directly, or route requests via **ZenMax** (as an API relay).
-
-- OpenRouter base URL (recommended default):
-  - `https://openrouter.ai/api/v1/chat/completions`
-- ZenMax base URL (relay):
-  - `https://zenmux.ai/api/v1/chat/completions`
-
-If your deployment supports it, set the base URL via environment variable or update `backend/config.py` (`OPENROUTER_API_URL`) to point to the endpoint you want.
-
-Create a `.env` file in the project root:
-
-```env
-OPENROUTER_API_KEY=sk-or-v1-...
-```
-
-*(By default, the project uses ZenMax / OpenRouter. Get your keys at [openrouter.ai](https://openrouter.ai/) or [zenmux.ai](https://zenmux.ai/).)*
-
-### 3. Customize Your Council (Optional)
-
-Edit `backend/config.py` to change the models in your council or appoint a different Chairman:
-
-```python
-COUNCIL_MODELS = [
-    "openai/gpt-5.2",
-    "google/gemini-3-pro-preview",
-    "deepseek/deepseek-reasoner",
-]
-CHAIRMAN_MODEL = "google/gemini-3-pro-preview"
-```
-
-## 🎮 Running the App
-
-The easiest way to start both the backend and frontend is using the included script:
+### 2. Start the app
 
 ```bash
 ./start.sh
 ```
 
-Alternatively, run them manually in separate terminals:
-- **Backend:** `uv run python -m backend.main`
-- **Frontend:** `cd frontend && npm run dev`
+Or run Vite directly:
 
-Open [http://localhost:5173](http://localhost:5173) in your browser to start your MDT session!
+```bash
+cd frontend
+npm run dev
+```
 
-## 📚 Background & Acknowledgements
+Open `http://localhost:5173`.
+
+### 3. Configure your provider in the UI
+
+Click **Settings** and enter:
+
+- an OpenAI-compatible chat completions URL
+- your API key
+- one model per line for the council
+- the chairman model
+- optionally a separate title model
+- optionally extra headers such as `HTTP-Referer` or `X-Title`
+
+Example base URLs:
+
+- `https://openrouter.ai/api/v1/chat/completions`
+- any other browser-capable OpenAI-compatible endpoint you control
+
+## Local Storage Model
+
+The browser stores:
+
+- provider settings
+- conversations
+- stage traces and ranking metadata
+
+Nothing is persisted on a project backend.
+
+## Scripts
+
+From `frontend/`:
+
+- `npm run dev` — local development
+- `npm run build` — production build
+- `npm run preview` — preview the built app
+- `npm run lint` — ESLint
+- `npm run test` — Vitest
+
+## Deploy to Cloudflare Pages
+
+Use the `frontend/` directory as the build root:
+
+- **Build command:** `npm run build`
+- **Build output directory:** `dist`
+
+No server functions or backend services are required.
+
+## Background
 
 The core idea—LLM-driven multi-agent collaboration for “team-style” reasoning—was explored in our published work:
-- 📖 **Paper:** *ColaCare: Enhancing Electronic Health Record Modeling through Large Language Model-Driven Multi-Agent Collaboration* (**WWW 2025**)
-- 🔗 **arXiv:** [https://arxiv.org/abs/2410.02551](https://arxiv.org/abs/2410.02551)
 
-This codebase structure is inspired by Andrej Karpathy's excellent [llm-council](https://github.com/karpathy/llm-council) prototype, significantly expanded with a modern UI, streaming, anonymization, and persistent storage.
+- **Paper:** *ColaCare: Enhancing Electronic Health Record Modeling through Large Language Model-Driven Multi-Agent Collaboration* (**WWW 2025**)
+- **arXiv:** `https://arxiv.org/abs/2410.02551`
 
----
-<div align="center">
-  <i>If you find this project useful, please consider giving it a ⭐ to help others discover it!</i>
-</div>
+This project keeps the MDT idea while shifting the entire runtime into a static frontend for simpler deployment.
