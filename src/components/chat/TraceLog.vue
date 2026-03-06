@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { Binary, ChevronDown, ChevronUp } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 
 const props = defineProps<{
   metadata?: unknown
 }>()
 
+const { t } = useI18n()
 const open = ref(false)
 const serialized = computed(() => {
   try {
@@ -26,11 +28,11 @@ const serialized = computed(() => {
         @click="open = !open"
       >
         <Binary :size="16" class="text-primary" />
-        {{ open ? 'Hide trace log' : 'Show trace log' }}
+        {{ open ? t('traceHide') : t('traceShow') }}
         <ChevronUp v-if="open" :size="16" />
         <ChevronDown v-else :size="16" />
       </button>
-      <CopyButton icon-only title="Copy trace log" :get-text="() => serialized" />
+      <CopyButton icon-only :title="t('copyTraceLog')" :get-text="() => serialized" />
     </div>
     <pre
       v-if="open"

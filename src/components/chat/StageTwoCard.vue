@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { ArrowDownWideNarrow, LoaderCircle, Scale } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import StageCard from './StageCard.vue'
@@ -38,6 +39,7 @@ const props = defineProps<{
   councilOrder?: string[]
 }>()
 
+const { t } = useI18n()
 const activeTab = ref(0)
 const showThinking = ref(false)
 
@@ -89,8 +91,8 @@ const shortModelName = (model: string) => model.split('/')[1] || model
 <template>
   <StageCard
     v-if="tabs.length > 0"
-    title="Stage 2"
-    subtitle="Peer evaluation and rankings"
+    :title="t('stage2Title')"
+    :subtitle="t('stage2Subtitle')"
   >
     <div class="space-y-4">
       <div class="flex flex-wrap gap-2">
@@ -124,7 +126,7 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             class="inline-flex items-center gap-1 text-xs font-medium text-primary"
           >
             <LoaderCircle :size="12" class="animate-spin" />
-            Thinking
+            {{ t('stageThinking') }}
           </span>
         </button>
       </div>
@@ -136,13 +138,13 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             {{ activeModel }}
           </div>
           <div class="flex items-center gap-2">
-            <CopyButton icon-only title="Copy ranking" :get-text="() => rankingText" />
+            <CopyButton icon-only :title="t('copyRanking')" :get-text="() => rankingText" />
             <button
               type="button"
               class="inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
               @click="showThinking = !showThinking"
             >
-              {{ showThinking ? 'Hide thinking' : 'Show thinking' }}
+              {{ showThinking ? t('stageHideThinking') : t('stageShowThinking') }}
             </button>
           </div>
         </div>
@@ -153,7 +155,7 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
           >
             <LoaderCircle :size="14" class="animate-spin" />
-            Thinking…
+            {{ t('stageThinkingEllipsis') }}
           </div>
 
           <MarkdownRenderer
@@ -162,7 +164,7 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             class="prose-headings:mt-6 prose-p:my-3"
           />
           <div v-else class="rounded-xl border border-dashed border-border bg-background/80 px-4 py-5 text-sm text-muted-foreground">
-            Waiting for ranking output…
+            {{ t('stageWaitingRanking') }}
           </div>
 
           <div
@@ -170,16 +172,14 @@ const shortModelName = (model: string) => model.split('/')[1] || model
             class="rounded-xl border border-border/80 bg-background/90 p-4"
           >
             <div class="mb-3 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-              Thinking
+              {{ t('stageThinking') }}
             </div>
             <MarkdownRenderer
               v-if="thinkingText"
               :source="thinkingText"
               class="prose-p:my-2 prose-headings:mt-4"
             />
-            <div v-else class="text-sm text-muted-foreground">
-              Model did not provide thinking / reasoning.
-            </div>
+            <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
           </div>
 
           <div
@@ -188,7 +188,7 @@ const shortModelName = (model: string) => model.split('/')[1] || model
           >
             <div class="mb-3 flex items-center gap-2 text-sm font-medium text-foreground">
               <ArrowDownWideNarrow :size="16" class="text-primary" />
-              Extracted ranking
+              {{ t('stageExtractedRanking') }}
             </div>
             <ol class="space-y-2 text-sm text-muted-foreground">
               <li
@@ -211,10 +211,10 @@ const shortModelName = (model: string) => model.split('/')[1] || model
         class="rounded-2xl border border-border/80 bg-background px-4 py-4"
       >
         <div class="mb-4 flex items-center justify-between gap-3">
-          <div class="text-sm font-semibold text-foreground">Aggregate rankings</div>
+          <div class="text-sm font-semibold text-foreground">{{ t('stageAggregateRankings') }}</div>
           <CopyButton
             icon-only
-            title="Copy aggregate rankings"
+            :title="t('copyAggregateRankings')"
             :get-text="() => JSON.stringify(props.aggregateRankings, null, 2)"
           />
         </div>
@@ -234,8 +234,8 @@ const shortModelName = (model: string) => model.split('/')[1] || model
                 </div>
               </div>
               <div class="text-right text-sm text-muted-foreground">
-                <div>Avg {{ aggregate.average_rank.toFixed(2) }}</div>
-                <div>{{ aggregate.rankings_count }} vote<span v-if="aggregate.rankings_count !== 1">s</span></div>
+                <div>{{ t('stageAverageRank', { value: aggregate.average_rank.toFixed(2) }) }}</div>
+                <div>{{ t('stageVotes', { count: aggregate.rankings_count }) }}</div>
               </div>
             </div>
           </div>

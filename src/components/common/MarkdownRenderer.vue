@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '@/i18n'
 import { parseMarkdown, sanitizeMarkdownHtml } from '@/utils/markdown'
 
 const props = defineProps<{
@@ -7,7 +8,16 @@ const props = defineProps<{
   class?: string
 }>()
 
-const renderedHtml = computed(() => sanitizeMarkdownHtml(parseMarkdown(props.source || '')))
+const { t } = useI18n()
+
+const renderedHtml = computed(() =>
+  sanitizeMarkdownHtml(
+    parseMarkdown(props.source || '', {
+      code: t('markdownCode'),
+      copy: t('copy'),
+    }),
+  ),
+)
 
 const writeToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText) {
@@ -32,13 +42,13 @@ const handleClick = async (event: MouseEvent) => {
   const encoded = trigger?.dataset.copyCode
   if (!trigger || !encoded) return
 
-  const originalText = trigger.textContent || 'Copy'
+  const originalText = trigger.textContent || t('copy')
   try {
     await writeToClipboard(decodeURIComponent(encoded))
-    trigger.textContent = 'Copied'
+    trigger.textContent = t('copied')
   } catch (error) {
     console.error('Failed to copy code block', error)
-    trigger.textContent = 'Failed'
+    trigger.textContent = t('copyFailed')
   } finally {
     window.setTimeout(() => {
       trigger.textContent = originalText

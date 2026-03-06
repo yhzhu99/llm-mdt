@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import { LoaderCircle, Settings2 } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
 import ChatComposer from './ChatComposer.vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
@@ -103,6 +104,7 @@ const emit = defineEmits<{
   (event: 'open-settings'): void
 }>()
 
+const { t } = useI18n()
 const messagesContainer = ref<HTMLElement | null>(null)
 const messagesEnd = ref<HTMLElement | null>(null)
 
@@ -165,13 +167,13 @@ const handleSend = (value: string) => emit('send', value)
       >
         <div class="space-y-3">
           <div class="inline-flex items-center rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary">
-            Provider setup required
+            {{ t('providerSetupRequired') }}
           </div>
           <h2 class="text-3xl font-semibold tracking-tight text-foreground">
-            Configure your browser provider
+            {{ t('configureBrowserProvider') }}
           </h2>
           <p class="text-base leading-7 text-muted-foreground">
-            LLM MDT runs entirely in your browser and stores settings locally on this device.
+            {{ t('providerSetupDescription') }}
           </p>
         </div>
 
@@ -181,7 +183,7 @@ const handleSend = (value: string) => emit('send', value)
           @click="emit('open-settings')"
         >
           <Settings2 :size="16" />
-          Open settings
+          {{ t('openSettings') }}
         </button>
       </div>
 
@@ -191,14 +193,13 @@ const handleSend = (value: string) => emit('send', value)
       >
         <div class="space-y-3 text-center">
           <div class="inline-flex items-center rounded-full border border-border bg-card px-4 py-1.5 text-sm font-medium text-muted-foreground shadow-sm">
-            Browser-native MDT workflow
+            {{ t('browserLocalWorkflow') }}
           </div>
           <h2 class="text-4xl font-semibold tracking-tight text-foreground">
-            Welcome to LLM MDT
+            {{ t('welcomeTitle') }}
           </h2>
           <p class="mx-auto max-w-2xl text-base leading-7 text-muted-foreground">
-            Ask one question to consult the model council. The app streams each stage so you can
-            inspect individual answers, peer review, and the chairman synthesis.
+            {{ t('welcomeDescription') }}
           </p>
         </div>
 
@@ -215,9 +216,9 @@ const handleSend = (value: string) => emit('send', value)
 
       <div v-else class="mx-auto flex w-full max-w-5xl flex-col gap-4">
         <div v-if="conversation.messages.length === 0" class="rounded-[1.75rem] border border-dashed border-border bg-background/90 px-6 py-10 text-center">
-          <div class="text-lg font-semibold text-foreground">Start a conversation</div>
+          <div class="text-lg font-semibold text-foreground">{{ t('startConversation') }}</div>
           <p class="mt-2 text-sm text-muted-foreground">
-            Ask a question to consult the LLM MDT council.
+            {{ t('askCouncilQuestion') }}
           </p>
         </div>
 
@@ -231,8 +232,8 @@ const handleSend = (value: string) => emit('send', value)
             class="ml-auto max-w-3xl rounded-[1.75rem] border border-border/80 bg-card shadow-sm"
           >
             <div class="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
-              <div class="text-sm font-semibold text-foreground">You</div>
-              <CopyButton icon-only title="Copy message" :get-text="() => (message as UserMessage).content" />
+              <div class="text-sm font-semibold text-foreground">{{ t('messageYou') }}</div>
+              <CopyButton icon-only :title="t('copyMessage')" :get-text="() => (message as UserMessage).content" />
             </div>
             <div class="px-5 py-5">
               <MarkdownRenderer :source="(message as UserMessage).content" class="prose-p:my-3" />
@@ -245,9 +246,9 @@ const handleSend = (value: string) => emit('send', value)
           >
             <div class="flex items-center justify-between gap-3 border-b border-border/70 pb-4">
               <div>
-                <div class="text-sm font-semibold text-foreground">LLM MDT</div>
+                <div class="text-sm font-semibold text-foreground">{{ t('assistantLabel') }}</div>
                 <div class="text-sm text-muted-foreground">
-                  Staged council response
+                  {{ t('assistantSubtitle') }}
                 </div>
               </div>
               <div
@@ -255,7 +256,7 @@ const handleSend = (value: string) => emit('send', value)
                 class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary"
               >
                 <LoaderCircle :size="14" class="animate-spin" />
-                Streaming
+                {{ t('streaming') }}
               </div>
             </div>
 
@@ -266,7 +267,7 @@ const handleSend = (value: string) => emit('send', value)
               >
                 <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <LoaderCircle :size="16" class="animate-spin" />
-                  Collecting individual model responses…
+                  {{ t('stage1Subtitle') }}
                 </div>
               </div>
 
@@ -284,7 +285,7 @@ const handleSend = (value: string) => emit('send', value)
               >
                 <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <LoaderCircle :size="16" class="animate-spin" />
-                  Evaluating peer rankings…
+                  {{ t('stage2Subtitle') }}
                 </div>
               </div>
 
@@ -304,7 +305,7 @@ const handleSend = (value: string) => emit('send', value)
               >
                 <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                   <LoaderCircle :size="16" class="animate-spin" />
-                  Preparing final synthesis…
+                  {{ t('stage3Subtitle') }}
                 </div>
               </div>
 

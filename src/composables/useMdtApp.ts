@@ -372,7 +372,7 @@ export function useMdtApp() {
     }
 
     if (!currentProjectId.value) {
-      throw new Error('No project is available')
+      throw new Error(t('errorNoProjectAvailable'))
     }
 
     const conversation = await api.createConversationForProject(currentProjectId.value, t('conversationUntitled'))
@@ -472,7 +472,7 @@ export function useMdtApp() {
       }
 
       let receivedCompleteEvent = false
-      await api.sendMessageStream(conversationIdForRequest, { content }, async (_eventType, event) => {
+      await api.sendMessageStream(conversationIdForRequest, { content, locale: locale.value }, async (_eventType, event) => {
         switch (event.type) {
           case 'stage1_start':
             updateAssistantMessage((message) => ({
@@ -666,7 +666,7 @@ export function useMdtApp() {
             break
           }
           case 'stage3_error': {
-            const errorMessage = event.message || 'Failed to complete final synthesis'
+            const errorMessage = event.message || t('orchestratorFinalSynthesisFailed')
             enqueueAssistantUpdate((message) => ({
               ...message,
               streamMeta: {
@@ -713,7 +713,7 @@ export function useMdtApp() {
             isLoading.value = false
             break
           case 'error':
-            lastProviderError.value = event.message || 'Failed to run MDT'
+            lastProviderError.value = event.message || t('orchestratorRunFailed')
             isLoading.value = false
             break
         }

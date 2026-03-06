@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import ChatSurface from '@/components/chat/ChatSurface.vue'
 import Sidebar from '@/components/layout/Sidebar.vue'
 import TopBar from '@/components/layout/TopBar.vue'
@@ -39,6 +40,12 @@ const {
   t,
   toggleSidebar,
 } = useMdtApp()
+
+const placeholderConversationTitles = new Set(['', 'New Conversation', 'Conversation', '新对话'])
+const topBarTitle = computed(() => {
+  const title = String(currentConversation.value?.title || '').trim()
+  return placeholderConversationTitles.has(title) ? t('appNamePrimary') : title
+})
 </script>
 
 <template>
@@ -63,7 +70,7 @@ const {
 
     <div class="flex min-w-0 flex-1 flex-col">
       <TopBar
-        :title="currentConversation?.title || t('appNamePrimary')"
+        :title="topBarTitle"
         :status="providerStatus"
         :status-text="providerStatusText"
         @change-locale="setLocale"

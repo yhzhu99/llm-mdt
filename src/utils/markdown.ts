@@ -66,8 +66,32 @@ const rewriteExternalLinks = (html: string) =>
       `<a${before}href="${href}"${after} target="_blank" rel="noreferrer noopener">`,
   )
 
-export const parseMarkdown = (content: string) => {
+export const parseMarkdown = (
+  content: string,
+  labels: {
+    code?: string
+    copy?: string
+  } = {},
+) => {
   if (!content) return ''
+  const codeLabel = escapeHtml(labels.code || 'code')
+  const copyLabel = escapeHtml(labels.copy || 'Copy')
+  renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+    const normalizedLang = normalizeLanguage(lang)
+    const encodedCode = encodeURIComponent(text)
+
+    return `
+      <div class="md-codeblock not-prose overflow-hidden rounded-xl border border-border/80 bg-muted/40">
+        <div class="flex items-center justify-between gap-3 border-b border-border/80 bg-muted/70 px-3 py-2">
+          <span class="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">${escapeHtml(normalizedLang || codeLabel)}</span>
+          <button type="button" class="md-copy-trigger inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground" data-copy-code="${encodedCode}">
+            ${copyLabel}
+          </button>
+        </div>
+        <pre class="overflow-x-auto bg-transparent p-4 text-sm leading-6 text-foreground"><code>${escapeHtml(text)}</code></pre>
+      </div>
+    `
+  }
   return markdownParser.parse(content) as string
 }
 

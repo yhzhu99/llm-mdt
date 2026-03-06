@@ -18,10 +18,10 @@ describe('ChatComposer', () => {
     render(Wrapper)
 
     await fireEvent.update(
-      screen.getByPlaceholderText(/Ask your question/i),
+      screen.getByPlaceholderText(/请输入你的问题/i),
       'How should the MDT work?',
     )
-    await fireEvent.click(screen.getByRole('button', { name: /send message/i }))
+    await fireEvent.click(screen.getByRole('button', { name: /发送/i }))
 
     expect(onSend).toHaveBeenCalledWith('How should the MDT work?')
   })
@@ -34,6 +34,6 @@ describe('ChatComposer', () => {
       },
     })
 
-    expect(screen.getByText(/Configure provider settings to start a browser-only MDT run/i)).toBeInTheDocument()
+    expect(screen.getByText(/请先配置 Provider/i)).toBeInTheDocument()
   })
 })

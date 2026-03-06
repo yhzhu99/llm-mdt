@@ -131,6 +131,7 @@ export const api = {
     return runMdtConversationStream({
       conversationId,
       content: payload.content || '',
+      locale: payload.locale,
       settings,
       onEvent,
     })

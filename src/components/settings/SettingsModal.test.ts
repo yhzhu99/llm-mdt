@@ -19,9 +19,9 @@ describe('SettingsModal', () => {
       },
     })
 
-    await fireEvent.update(screen.getByLabelText(/API key/i), 'secret-key')
-    await fireEvent.update(screen.getByLabelText(/Extra headers/i), 'X-Title: LLM MDT')
-    await fireEvent.click(screen.getByRole('button', { name: /Save settings/i }))
+    await fireEvent.update(screen.getByLabelText(/API Key/i), 'secret-key')
+    await fireEvent.update(screen.getByLabelText(/额外请求头/i), 'X-Title: LLM MDT')
+    await fireEvent.click(screen.getByRole('button', { name: /保存设置/i }))
 
     const emittedEvents = emitted() as Record<string, Array<[unknown]>>
     const saveEvents = emittedEvents.save

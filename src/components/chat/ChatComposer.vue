@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
 import { ArrowUp, Settings2 } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
 
 const props = withDefaults(
@@ -23,6 +24,7 @@ const emit = defineEmits<{
   (event: 'open-settings'): void
 }>()
 
+const { t } = useI18n()
 const input = defineModel<string>({ default: '' })
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
 
@@ -69,7 +71,7 @@ const handleKeydown = (event: KeyboardEvent) => {
         v-model="input"
         :disabled="disabled || !providerConfigured"
         rows="3"
-        placeholder="Ask your question… (Shift+Enter for new line, Enter to send)"
+        :placeholder="t('composerPlaceholder')"
         class="min-h-[92px] w-full resize-none border-0 bg-transparent text-sm leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70"
         @keydown="handleKeydown"
       />
@@ -79,23 +81,23 @@ const handleKeydown = (event: KeyboardEvent) => {
       <div class="space-y-1 text-xs text-muted-foreground">
         <div class="flex items-center gap-2">
           <span class="rounded-md border border-border bg-background px-1.5 py-0.5 font-medium text-foreground">Enter</span>
-          <span>send</span>
+          <span>{{ t('composerEnterSend') }}</span>
           <span>·</span>
           <span class="rounded-md border border-border bg-background px-1.5 py-0.5 font-medium text-foreground">Shift</span>
           <span>+</span>
           <span class="rounded-md border border-border bg-background px-1.5 py-0.5 font-medium text-foreground">Enter</span>
-          <span>newline</span>
+          <span>{{ t('composerNewline') }}</span>
         </div>
-        <div v-if="isLoading">Generating…</div>
+        <div v-if="isLoading">{{ t('composerGenerating') }}</div>
         <div v-else-if="!providerConfigured" class="flex items-center gap-2">
-          Configure provider settings to start a browser-only MDT run.
+          {{ t('composerProviderHint') }}
           <button
             type="button"
             class="inline-flex items-center gap-1 font-medium text-primary transition-colors hover:text-primary/80"
             @click="emit('open-settings')"
           >
             <Settings2 :size="14" />
-            Open settings
+            {{ t('openSettings') }}
           </button>
         </div>
       </div>
@@ -103,8 +105,8 @@ const handleKeydown = (event: KeyboardEvent) => {
       <Button
         type="submit"
         size="icon"
-        aria-label="Send message"
-        title="Send message"
+        :aria-label="t('composerSend')"
+        :title="t('composerSend')"
         :disabled="disabled || !providerConfigured || !input.trim()"
         :variant="providerConfigured ? 'default' : 'secondary'"
       >

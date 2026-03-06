@@ -1,7 +1,9 @@
 import { conversationStore } from './conversationStore'
 import { chatCompletion, chatCompletionStream } from './llmClient'
 import { isProviderConfigured } from './providerSettings'
+import { translate } from '@/i18n'
 import type {
+  AppLocale,
   ChatCompletionClient,
   ChatCompletionMessage,
   ConversationRepository,
@@ -172,6 +174,7 @@ async function collectStageResponses({
   client,
   emit,
   valueKey,
+  locale,
 }: {
   stagePrefix: 'stage1' | 'stage2'
   models: string[]
@@ -180,6 +183,7 @@ async function collectStageResponses({
   client: ChatCompletionClient
   emit: (event: MdtStreamEvent) => void
   valueKey: 'response' | 'ranking'
+  locale: AppLocale
 }) {
   emit({ type: `${stagePrefix}_start` } as MdtStreamEvent)
 
@@ -221,7 +225,7 @@ async function collectStageResponses({
             emit({
               type: `${stagePrefix}_model_error`,
               model,
-              message: event.message || 'Unknown error',
+              message: event.message || translate(locale, 'orchestratorUnknownError'),
             } as MdtStreamEvent)
             break
           }
@@ -258,10 +262,15 @@ async function collectStageResponses({
   return models.map((model) => resultsByModel.get(model)).filter(Boolean) as Array<Stage1Result | Stage2Result>
 }
 
-async function generateConversationTitle(userQuery: string, settings: ProviderSettings, client: ChatCompletionClient) {
+async function generateConversationTitle(
+  userQuery: string,
+  settings: ProviderSettings,
+  client: ChatCompletionClient,
+  locale: AppLocale,
+) {
   const titleModel = settings.titleModel || settings.chairmanModel
   if (!titleModel) {
-    return 'New Conversation'
+    return translate(locale, 'conversationUntitled')
   }
 
   try {
@@ -271,23 +280,24 @@ async function generateConversationTitle(userQuery: string, settings: ProviderSe
       timeoutMs: 30000,
     })
 
-    const title = String(response.content || 'New Conversation')
+    const title = String(response.content || translate(locale, 'conversationUntitled'))
       .trim()
       .replace(/^["']+|["']+$/g, '')
 
     if (!title) {
-      return 'New Conversation'
+      return translate(locale, 'conversationUntitled')
     }
 
     return title.length > 50 ? `${title.slice(0, 47)}...` : title
   } catch {
-    return 'New Conversation'
+    return translate(locale, 'conversationUntitled')
   }
 }
 
 export async function runMdtConversationStream({
   conversationId,
   content,
+  locale = 'zh-CN',
   settings,
   onEvent,
   conversationRepo = conversationStore,
@@ -295,13 +305,14 @@ export async function runMdtConversationStream({
 }: {
   conversationId: string
   content: string
+  locale?: AppLocale
   settings: ProviderSettings
   onEvent?: MdtEventHandler
   conversationRepo?: ConversationRepository
   client?: ChatCompletionClient
 }) {
   if (!isProviderConfigured(settings)) {
-    throw new Error('Configure a browser-capable LLM provider before sending a message.')
+    throw new Error(translate(locale, 'orchestratorConfigureProvider'))
   }
 
   const emit = (event: MdtStreamEvent) => {
@@ -312,11 +323,13 @@ export async function runMdtConversationStream({
 
   const conversation = await conversationRepo.getConversation(conversationId)
   if (!conversation) {
-    throw new Error('Conversation not found')
+    throw new Error(translate(locale, 'orchestratorConversationNotFound'))
   }
 
   const isFirstMessage = (conversation.messages || []).length === 0
-  const titlePromise = isFirstMessage ? generateConversationTitle(content, settings, client) : Promise.resolve<string | null>(null)
+  const titlePromise = isFirstMessage
+    ? generateConversationTitle(content, settings, client, locale)
+    : Promise.resolve<string | null>(null)
 
   await conversationRepo.addUserMessage(conversationId, content)
 
@@ -334,6 +347,7 @@ export async function runMdtConversationStream({
       client,
       emit,
       valueKey: 'response',
+      locale,
     })) as Stage1Result[]
     emit({ type: 'stage1_complete', data: stage1Results })
 
@@ -350,6 +364,7 @@ export async function runMdtConversationStream({
         client,
         emit,
         valueKey: 'ranking',
+        locale,
       })) as Stage2Result[]
       stage2Results = stage2Results.map((result) => ({
         ...result,
@@ -386,14 +401,18 @@ export async function runMdtConversationStream({
           }
         } else if (event.delta_type === 'error') {
           stage3Failed = true
-          emit({ type: 'stage3_error', message: event.message || 'Unknown error' })
+          emit({ type: 'stage3_error', message: event.message || translate(locale, 'orchestratorUnknownError') })
           break
         }
       }
 
       stage3Result = {
         model: settings.chairmanModel,
-        response: stage3Content || (stage3Failed ? 'Error: Unable to generate final synthesis.' : 'No final synthesis was returned.'),
+        response:
+          stage3Content ||
+          (stage3Failed
+            ? translate(locale, 'orchestratorFinalSynthesisFailed')
+            : translate(locale, 'orchestratorFinalSynthesisMissing')),
         reasoning_details: stage3Reasoning,
       }
       emit({ type: 'stage3_complete', data: stage3Result })
@@ -408,8 +427,7 @@ export async function runMdtConversationStream({
       emit({ type: 'stage3_start' })
       stage3Result = {
         model: settings.chairmanModel,
-        response:
-          'All models failed to respond. Check your provider configuration, CORS support, or API key and try again.',
+        response: translate(locale, 'orchestratorAllModelsFailed'),
         reasoning_details: null,
       }
       emit({ type: 'stage3_complete', data: stage3Result })
@@ -432,7 +450,7 @@ export async function runMdtConversationStream({
     if (!stage3Result) {
       stage3Result = {
         model: settings.chairmanModel,
-        response: 'Error: Unable to complete the MDT run.',
+        response: translate(locale, 'orchestratorRunFailed'),
         reasoning_details: null,
       }
       emit({ type: 'stage3_complete', data: stage3Result })

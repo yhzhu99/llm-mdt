@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { Check, Copy } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
 import { cn } from '@/utils'
 
 const props = withDefaults(
@@ -13,15 +14,18 @@ const props = withDefaults(
     class?: string
   }>(),
   {
-    label: 'Copy',
-    successLabel: 'Copied',
+    label: '',
+    successLabel: '',
     title: '',
     iconOnly: false,
     class: '',
   },
 )
 
+const { t } = useI18n()
 const status = ref<'idle' | 'success' | 'error'>('idle')
+const labelText = computed(() => props.label || t('copy'))
+const successText = computed(() => props.successLabel || t('copied'))
 
 const writeToClipboard = async (text: string) => {
   if (navigator.clipboard?.writeText) {
@@ -60,7 +64,8 @@ const handleCopy = async () => {
   <span class="relative inline-flex items-center" :class="props.class">
     <button
       type="button"
-      :title="title || label"
+      :title="title || labelText"
+      :aria-label="title || labelText"
       :class="
         cn(
           'inline-flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
@@ -71,7 +76,7 @@ const handleCopy = async () => {
     >
       <Check v-if="status === 'success'" :size="14" />
       <Copy v-else :size="14" />
-      <span v-if="!iconOnly">{{ status === 'success' ? successLabel : label }}</span>
+      <span v-if="!iconOnly">{{ status === 'success' ? successText : labelText }}</span>
     </button>
 
     <span
@@ -80,7 +85,7 @@ const handleCopy = async () => {
       role="status"
       aria-live="polite"
     >
-      {{ successLabel }}
+      {{ successText }}
     </span>
   </span>
 </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { AlertTriangle, KeyRound, Server, Settings2, ShieldAlert, X } from 'lucide-vue-next'
+import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
 
 interface ProviderSettingsLike {
@@ -24,6 +25,7 @@ const emit = defineEmits<{
   (event: 'clear'): void
 }>()
 
+const { t } = useI18n()
 const formatModelList = (models?: string[] | string) =>
   Array.isArray(models) ? models.join('\n') : String(models || '')
 
@@ -104,11 +106,10 @@ const handleSubmit = () => {
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-base font-semibold text-foreground">
               <Settings2 :size="18" class="text-primary" />
-              Browser provider settings
+              {{ t('settingsTitle') }}
             </div>
             <p class="max-w-2xl text-sm leading-6 text-muted-foreground">
-              Stored only in this browser session. This experience is optimized for local,
-              browser-capable providers with permissive CORS.
+              {{ t('settingsDescription') }}
             </p>
           </div>
           <button
@@ -126,10 +127,9 @@ const handleSubmit = () => {
               <div class="flex items-start gap-3">
                 <ShieldAlert :size="18" class="mt-0.5 text-amber-600" />
                 <div>
-                  <div class="text-sm font-semibold text-foreground">Browser-only tradeoff</div>
+                  <div class="text-sm font-semibold text-foreground">{{ t('settingsTradeoffTitle') }}</div>
                   <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                    Keep this for personal or local use only. Secrets stored here are visible to
-                    anyone with access to this browser profile.
+                    {{ t('settingsTradeoffBody') }}
                   </p>
                 </div>
               </div>
@@ -138,10 +138,9 @@ const handleSubmit = () => {
               <div class="flex items-start gap-3">
                 <AlertTriangle :size="18" class="mt-0.5 text-primary" />
                 <div>
-                  <div class="text-sm font-semibold text-foreground">Direct browser requests</div>
+                  <div class="text-sm font-semibold text-foreground">{{ t('settingsCorsTitle') }}</div>
                   <p class="mt-1 text-sm leading-6 text-muted-foreground">
-                    The endpoint must accept direct browser-origin requests, or the MDT flow will
-                    fail during streaming.
+                    {{ t('settingsCorsBody') }}
                   </p>
                 </div>
               </div>
@@ -152,7 +151,7 @@ const handleSubmit = () => {
             <label class="block space-y-2">
               <span class="inline-flex items-center gap-2 text-sm font-medium text-foreground">
                 <Server :size="16" class="text-primary" />
-                OpenAI-compatible base URL
+                {{ t('settingsBaseUrl') }}
               </span>
               <input
                 v-model="formState.baseUrl"
@@ -165,7 +164,7 @@ const handleSubmit = () => {
             <label class="block space-y-2">
               <span class="inline-flex items-center gap-2 text-sm font-medium text-foreground">
                 <KeyRound :size="16" class="text-primary" />
-                API key
+                {{ t('settingsApiKey') }}
               </span>
               <input
                 v-model="formState.apiKey"
@@ -176,21 +175,21 @@ const handleSubmit = () => {
             </label>
 
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-foreground">Council models</span>
+              <span class="text-sm font-medium text-foreground">{{ t('settingsCouncilModels') }}</span>
               <textarea
                 v-model="formState.councilModelsText"
                 rows="5"
-                placeholder="One model per line"
+                :placeholder="t('settingsModelPerLine')"
                 class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               />
               <div class="text-xs text-muted-foreground">
-                {{ councilCount }} model<span v-if="councilCount !== 1">s</span> configured
+                {{ t('settingsModelsConfigured', { count: councilCount }) }}
               </div>
             </label>
 
             <div class="grid gap-5 md:grid-cols-2">
               <label class="block space-y-2">
-                <span class="text-sm font-medium text-foreground">Chairman model</span>
+                <span class="text-sm font-medium text-foreground">{{ t('settingsChairmanModel') }}</span>
                 <input
                   v-model="formState.chairmanModel"
                   type="text"
@@ -200,18 +199,18 @@ const handleSubmit = () => {
               </label>
 
               <label class="block space-y-2">
-                <span class="text-sm font-medium text-foreground">Title model</span>
+                <span class="text-sm font-medium text-foreground">{{ t('settingsTitleModel') }}</span>
                 <input
                   v-model="formState.titleModel"
                   type="text"
-                  placeholder="Defaults to chairman model"
+                  :placeholder="t('settingsTitleModelPlaceholder')"
                   class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 />
               </label>
             </div>
 
             <label class="block space-y-2">
-              <span class="text-sm font-medium text-foreground">Extra headers</span>
+              <span class="text-sm font-medium text-foreground">{{ t('settingsExtraHeaders') }}</span>
               <textarea
                 v-model="formState.extraHeadersText"
                 rows="4"
@@ -219,7 +218,7 @@ const handleSubmit = () => {
                 class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
               />
               <div class="text-xs text-muted-foreground">
-                Optional. Use one header per line in <code>Name: Value</code> format.
+                {{ t('settingsExtraHeadersHelp') }}
               </div>
             </label>
 
@@ -233,10 +232,10 @@ const handleSubmit = () => {
         </div>
 
         <div class="flex flex-col gap-3 border-t border-border/80 px-6 py-5 sm:flex-row sm:items-center sm:justify-between">
-          <Button variant="ghost" @click="emit('clear')">Clear stored settings</Button>
+          <Button variant="ghost" @click="emit('clear')">{{ t('settingsClear') }}</Button>
           <div class="flex items-center justify-end gap-2">
-            <Button variant="ghost" @click="emit('close')">Cancel</Button>
-            <Button @click="handleSubmit">Save settings</Button>
+            <Button variant="ghost" @click="emit('close')">{{ t('settingsCancel') }}</Button>
+            <Button @click="handleSubmit">{{ t('settingsSave') }}</Button>
           </div>
         </div>
       </div>

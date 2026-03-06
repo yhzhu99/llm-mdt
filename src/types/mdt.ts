@@ -177,6 +177,7 @@ export interface HealthStatus {
 
 export interface SendMessagePayload {
   content: string
+  locale?: AppLocale
 }
 
 export interface SendMessageResult {
