@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="frontend/public/banner.svg" alt="LLM MDT Banner" width="100%" />
+  <img src="public/banner.svg" alt="LLM MDT Banner" width="100%" />
 
   <h1>LLM MDT (Multi-Disciplinary Team)</h1>
 
@@ -55,10 +55,9 @@ This is convenient, but it is **not a secure secret-management model for shared 
 
 ## Quick Start
 
-### 1. Install frontend dependencies
+### 1. Install dependencies
 
 ```bash
-cd frontend
 npm install
 ```
 
@@ -71,7 +70,6 @@ npm install
 Or run Vite directly:
 
 ```bash
-cd frontend
 npm run dev
 ```
 
@@ -105,7 +103,7 @@ Nothing is persisted on a project backend.
 
 ## Scripts
 
-From `frontend/`:
+From the repo root:
 
 - `npm run dev` — local development
 - `npm run build` — production build
@@ -115,7 +113,7 @@ From `frontend/`:
 
 ## Deploy to Cloudflare Pages
 
-Use the `frontend/` directory as the build root:
+Use the repo root as the build root:
 
 - **Build command:** `npm run build`
 - **Build output directory:** `dist`
