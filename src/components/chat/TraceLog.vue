@@ -20,14 +20,14 @@ const serialized = computed(() => {
 </script>
 
 <template>
-  <div v-if="props.metadata" class="rounded-2xl border border-border/80 bg-background">
+  <div v-if="props.metadata" class="rounded-[1.25rem] border border-border/60 bg-background/60 backdrop-blur">
     <div class="flex items-center justify-between gap-3 px-4 py-3">
       <button
         type="button"
         class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
         @click="open = !open"
       >
-        <Binary :size="16" class="text-primary" />
+        <Binary :size="15" class="text-primary" />
         {{ open ? t('traceHide') : t('traceShow') }}
         <ChevronUp v-if="open" :size="16" />
         <ChevronDown v-else :size="16" />
@@ -36,7 +36,7 @@ const serialized = computed(() => {
     </div>
     <pre
       v-if="open"
-      class="overflow-x-auto border-t border-border/70 bg-muted/40 px-4 py-4 text-xs leading-6 text-muted-foreground"
+      class="overflow-x-auto border-t border-border/60 bg-muted/20 px-4 py-4 text-xs leading-6 text-muted-foreground"
     ><code>{{ serialized }}</code></pre>
   </div>
 </template>
