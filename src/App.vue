@@ -1,26 +1,79 @@
 <script setup lang="ts">
-import Button from '@/components/ui/button/Button.vue'
+import ChatSurface from '@/components/chat/ChatSurface.vue'
+import Sidebar from '@/components/layout/Sidebar.vue'
+import TopBar from '@/components/layout/TopBar.vue'
+import SettingsModal from '@/components/settings/SettingsModal.vue'
+import { useMdtApp } from '@/composables/useMdtApp'
+
+const {
+  conversations,
+  currentConversation,
+  currentConversationId,
+  draftMessage,
+  groupedConversations,
+  isLoading,
+  isSettingsOpen,
+  isSidebarCollapsed,
+  providerConfigured,
+  providerSettings,
+  providerStatus,
+  providerStatusText,
+  runtimeConfig,
+  settingsError,
+  clearSettings,
+  closeSettings,
+  deleteConversation,
+  newConversation,
+  openSettings,
+  renameConversation,
+  saveSettings,
+  selectConversation,
+  sendMessage,
+  toggleSidebar,
+} = useMdtApp()
 </script>
 
 <template>
-  <div class="min-h-screen bg-background text-foreground">
-    <div class="mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center gap-6 px-6 py-16 text-center">
-      <div class="inline-flex items-center rounded-full border border-border bg-card/80 px-4 py-1.5 text-sm text-muted-foreground shadow-sm">
-        Vue 3 + TypeScript + Tailwind migration in progress
-      </div>
-      <div class="space-y-4">
-        <h1 class="text-balance text-4xl font-semibold tracking-tight sm:text-5xl">
-          LLM MDT is being rebuilt on a modern frontend stack.
-        </h1>
-        <p class="mx-auto max-w-2xl text-pretty text-base leading-7 text-muted-foreground sm:text-lg">
-          The application shell, typed services, and MedX-aligned design system are now in place.
-          Next milestones wire the MDT workflow, browser settings, and staged streaming UI.
-        </p>
-      </div>
-      <div class="flex flex-wrap items-center justify-center gap-3">
-        <Button>Foundation ready</Button>
-        <Button variant="outline">Tailwind tokens synced</Button>
-      </div>
+  <div class="flex h-screen overflow-hidden bg-background">
+    <Sidebar
+      :conversations="conversations"
+      :grouped-conversations="groupedConversations"
+      :current-conversation-id="currentConversationId"
+      :is-collapsed="isSidebarCollapsed"
+      @delete="deleteConversation"
+      @new="newConversation"
+      @rename="renameConversation"
+      @select="selectConversation"
+      @toggle-collapsed="toggleSidebar"
+    />
+
+    <div class="flex min-w-0 flex-1 flex-col">
+      <TopBar
+        :title="currentConversation?.title || 'LLM MDT'"
+        :status="providerStatus"
+        :status-text="providerStatusText"
+        @new-conversation="newConversation"
+        @open-settings="openSettings"
+      />
+
+      <ChatSurface
+        v-model:draft="draftMessage"
+        :conversation="currentConversation"
+        :is-loading="isLoading"
+        :provider-configured="providerConfigured"
+        :runtime-config="runtimeConfig"
+        @open-settings="openSettings"
+        @send="sendMessage"
+      />
     </div>
+
+    <SettingsModal
+      :is-open="isSettingsOpen"
+      :settings="providerSettings"
+      :error="settingsError"
+      @clear="clearSettings"
+      @close="closeSettings"
+      @save="saveSettings"
+    />
   </div>
 </template>

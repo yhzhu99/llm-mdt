@@ -8,7 +8,7 @@
   <p>
     <a href="https://github.com/yhzhu99/llm-mdt/stargazers"><img src="https://img.shields.io/github/stars/yhzhu99/llm-mdt?style=flat-square&color=blue" alt="Stars"></a>
     <a href="https://github.com/yhzhu99/llm-mdt/network/members"><img src="https://img.shields.io/github/forks/yhzhu99/llm-mdt?style=flat-square&color=blue" alt="Forks"></a>
-    <img src="https://img.shields.io/badge/Frontend-React%20%2B%20Vite-61dafb?style=flat-square&logo=react&logoColor=black" alt="React">
+    <img src="https://img.shields.io/badge/Frontend-Vue%203%20%2B%20TS%20%2B%20Tailwind-42b883?style=flat-square&logo=vue.js&logoColor=white" alt="Vue">
     <img src="https://img.shields.io/badge/Deploy-Cloudflare%20Pages-f38020?style=flat-square&logo=cloudflare&logoColor=white" alt="Cloudflare Pages">
   </p>
 </div>
@@ -34,6 +34,7 @@ Conversations and provider settings are stored locally in the browser using Inde
 
 ## Features
 
+- **Vue 3 + TypeScript + Tailwind UI** aligned with a modern MedX-style design system
 - **Frontend-only MDT orchestration** with no runtime backend
 - **Anonymized peer review** to reduce model-name bias
 - **Streaming stage updates** for Stage 1, Stage 2, and Stage 3

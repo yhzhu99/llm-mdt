@@ -21,6 +21,12 @@ export default tseslint.config(
   ...tseslint.configs.recommended,
   ...pluginVue.configs['flat/recommended'],
   {
+    files: ['**/*.{ts,tsx,vue}'],
+    rules: {
+      'no-undef': 'off',
+    },
+  },
+  {
     files: ['**/*.vue'],
     languageOptions: {
       parser: vueParser,
@@ -32,6 +38,11 @@ export default tseslint.config(
     },
     rules: {
       'vue/multi-word-component-names': 'off',
+      'vue/max-attributes-per-line': 'off',
+      'vue/singleline-html-element-content-newline': 'off',
+      'vue/html-self-closing': 'off',
+      'vue/require-default-prop': 'off',
+      'vue/no-v-html': 'off',
     },
   },
   {
