@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import StageCard from './StageCard.vue'
-import { cn } from '@/utils'
+import { cn, pickBestReasoningText } from '@/utils'
 
 interface StageTwoRanking {
   model: string
@@ -75,7 +75,7 @@ const deAnonymizeText = (text: string) => {
 const rankingText = computed(() => activeRanking.value?.ranking || activeStream.value?.ranking || '')
 const displayRankingText = computed(() => deAnonymizeText(rankingText.value))
 const thinkingText = computed(
-  () => deAnonymizeText(activeRanking.value?.reasoning_details || activeStream.value?.thinking || ''),
+  () => deAnonymizeText(pickBestReasoningText(activeRanking.value?.reasoning_details, activeStream.value?.thinking)),
 )
 
 const hasStartedMainOutput = (model: string) => {

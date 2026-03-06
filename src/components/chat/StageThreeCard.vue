@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import StageCard from './StageCard.vue'
-import { cn } from '@/utils'
+import { cn, pickBestReasoningText } from '@/utils'
 
 interface StageThreeResult {
   model: string
@@ -47,7 +47,9 @@ const props = defineProps<{
 const { t } = useI18n()
 const showThinking = ref(false)
 const responseText = computed(() => props.finalResponse?.response || props.streamState?.response || '')
-const thinkingText = computed(() => props.finalResponse?.reasoning_details || props.streamState?.thinking || '')
+const thinkingText = computed(() =>
+  pickBestReasoningText(props.finalResponse?.reasoning_details, props.streamState?.thinking),
+)
 const reasoningNotice = computed(() => {
   if (!responseText.value || thinkingText.value || props.streamMeta?.status === 'error') return ''
 

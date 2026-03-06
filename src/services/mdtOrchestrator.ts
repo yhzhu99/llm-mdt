@@ -2,6 +2,7 @@ import { conversationStore } from './conversationStore'
 import { chatCompletion, chatCompletionStream } from './llmClient'
 import { isProviderConfigured } from './providerSettings'
 import { translate } from '@/i18n'
+import { pickBestReasoningText } from '@/utils'
 import type {
   AppLocale,
   ChatCompletionClient,
@@ -249,13 +250,13 @@ async function collectStageResponses({
             ? {
                 model,
                 response: contentAcc,
-                reasoning_details: reasoningDetails || reasoningAcc || null,
+                reasoning_details: pickBestReasoningText(reasoningDetails, reasoningAcc) || null,
               }
             : {
                 model,
                 ranking: contentAcc,
                 parsed_ranking: [],
-                reasoning_details: reasoningDetails || reasoningAcc || null,
+                reasoning_details: pickBestReasoningText(reasoningDetails, reasoningAcc) || null,
               },
         )
       }
@@ -428,7 +429,7 @@ export async function runMdtConversationStream({
           (stage3Failed
             ? translate(locale, 'orchestratorFinalSynthesisFailed')
             : translate(locale, 'orchestratorFinalSynthesisMissing')),
-        reasoning_details: stage3Reasoning || stage3ReasoningAcc || null,
+        reasoning_details: pickBestReasoningText(stage3Reasoning, stage3ReasoningAcc) || null,
         diagnostics: stage3Diagnostics,
       }
       emit({ type: 'stage3_complete', data: stage3Result })

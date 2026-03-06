@@ -5,7 +5,7 @@ import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import StageCard from './StageCard.vue'
-import { cn } from '@/utils'
+import { cn, pickBestReasoningText } from '@/utils'
 
 interface StageOneResponse {
   model: string
@@ -55,7 +55,9 @@ const activeResponse = computed(
 )
 const activeStream = computed(() => (activeModel.value ? props.streamState?.[activeModel.value] : undefined))
 const responseText = computed(() => activeResponse.value?.response || activeStream.value?.response || '')
-const thinkingText = computed(() => activeResponse.value?.reasoning_details || activeStream.value?.thinking || '')
+const thinkingText = computed(() =>
+  pickBestReasoningText(activeResponse.value?.reasoning_details, activeStream.value?.thinking),
+)
 
 const hasStartedMainOutput = (model: string) => {
   const finalized = props.responses.find((response) => response.model === model)?.response

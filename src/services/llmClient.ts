@@ -9,6 +9,7 @@ import type {
   RequestAttemptDiagnostic,
   RequestMode,
 } from '@/types'
+import { normalizeReasoningText, pickBestReasoningText } from '@/utils'
 
 interface RequestConfig {
   endpoint: string
@@ -166,10 +167,10 @@ function extractDetailedReasoningText(value: unknown) {
 }
 
 function mergeReasoningText(summary: string, details: string) {
-  const normalizedDetails = details.trim()
+  const normalizedDetails = normalizeReasoningText(details)
   if (normalizedDetails) return normalizedDetails
 
-  const normalizedSummary = summary.trim()
+  const normalizedSummary = normalizeReasoningText(summary)
   return normalizedSummary || ''
 }
 
@@ -342,7 +343,7 @@ function extractChoiceMessage(choice: Record<string, unknown>) {
 function buildChatResponseObject(message: Record<string, unknown>, fallbackReasoning = ''): ChatCompletionResult {
   return {
     content: normalizeStructuredText(message.content),
-    reasoning_details: extractUnifiedReasoningText(message) || fallbackReasoning || null,
+    reasoning_details: pickBestReasoningText(extractUnifiedReasoningText(message), fallbackReasoning) || null,
   }
 }
 
@@ -398,7 +399,7 @@ function parseResponsesResult(data: Record<string, unknown>): ChatCompletionResu
 
   return {
     content,
-    reasoning_details: itemReasoning || extractUnifiedReasoningText(data) || null,
+    reasoning_details: pickBestReasoningText(itemReasoning, extractUnifiedReasoningText(data)) || null,
   }
 }
 
@@ -446,18 +447,20 @@ function buildDiagnostics(
 function extractEventText(payload: Record<string, unknown>) {
   const part = payload.part && typeof payload.part === 'object' ? (payload.part as Record<string, unknown>) : null
 
-  return normalizeStructuredText(
-    payload.delta ??
-      payload.text ??
-      payload.reasoning ??
-      payload.reasoning_text ??
-      payload.reasoning_summary ??
-      payload.summary_text ??
-      part?.delta ??
-      part?.text ??
-      part?.summary_text ??
-      part?.summary ??
-      part?.content,
+  return normalizeReasoningText(
+    normalizeStructuredText(
+      payload.delta ??
+        payload.text ??
+        payload.reasoning ??
+        payload.reasoning_text ??
+        payload.reasoning_summary ??
+        payload.summary_text ??
+        part?.delta ??
+        part?.text ??
+        part?.summary_text ??
+        part?.summary ??
+        part?.content,
+    ),
   )
 }
 
@@ -842,12 +845,12 @@ async function* streamFromResponse(
   yield {
     delta_type: 'final',
     content: contentAcc,
-    reasoning_details: reasoningDetails || reasoningAcc || null,
+    reasoning_details: pickBestReasoningText(reasoningDetails, reasoningAcc) || null,
     diagnostics: buildDiagnostics(
       requestConfig,
       context,
       diagnostics,
-      reasoningDetails || reasoningAcc || null,
+      pickBestReasoningText(reasoningDetails, reasoningAcc) || null,
       'succeeded',
     ),
   }
