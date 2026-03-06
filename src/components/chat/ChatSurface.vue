@@ -127,9 +127,7 @@ const draftValue = computed({
 })
 
 const councilOrder = computed(() => props.runtimeConfig?.council_models || [])
-const canComposeInConversation = computed(
-  () => !props.conversation || props.conversation.messages.length === 0,
-)
+const hasConversationMessages = computed(() => Boolean(props.conversation?.messages?.length))
 
 const latestAssistantFingerprint = computed(() => {
   const messages = props.conversation?.messages || []
@@ -233,6 +231,9 @@ const hasStageSection = (message: AssistantMessage, stage: StageKey) => {
   )
 }
 
+const shouldRenderStageSection = (message: AssistantMessage, index: number, stage: StageKey) =>
+  hasStageSection(message, stage) || isAssistantActiveTurn(index)
+
 const baseStageStatuses = (message: AssistantMessage): Record<StageKey, StageStatus> => ({
   stage1: stageStatusFromModelMeta(
     message.streamMeta?.stage1,
@@ -271,10 +272,10 @@ const stageStatuses = (message: AssistantMessage, index: number): Record<StageKe
   return statuses
 }
 
-const stageAvailability = (message: AssistantMessage) => ({
-  stage1: hasStageSection(message, 'stage1'),
-  stage2: hasStageSection(message, 'stage2'),
-  stage3: hasStageSection(message, 'stage3'),
+const stageAvailability = (message: AssistantMessage, index: number) => ({
+  stage1: shouldRenderStageSection(message, index, 'stage1'),
+  stage2: shouldRenderStageSection(message, index, 'stage2'),
+  stage3: shouldRenderStageSection(message, index, 'stage3'),
 })
 
 const isAssistantStreaming = (message: AssistantMessage, index: number) => {
@@ -381,7 +382,7 @@ watch(latestAssistantFingerprint, async () => {
       data-chat-scroll-root
       class="scrollbar-hide flex-1 overflow-y-auto px-5 py-6 sm:px-6"
     >
-      <div v-if="!conversation" class="mx-auto flex min-h-full max-w-5xl items-center justify-center">
+      <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full max-w-5xl items-center justify-center">
         <div class="w-full max-w-4xl space-y-8">
           <div class="space-y-4 text-center">
             <div
@@ -422,7 +423,7 @@ watch(latestAssistantFingerprint, async () => {
       </div>
 
       <div
-        v-else
+        v-else-if="conversation"
         class="mx-auto grid w-full max-w-[92rem] gap-6 lg:grid-cols-[minmax(0,1fr)_14.5rem] lg:gap-8"
       >
         <div class="min-w-0 space-y-7">
@@ -437,7 +438,7 @@ watch(latestAssistantFingerprint, async () => {
                 stage3: stageSectionId(latestAssistantEntry.message.id, 'stage3'),
               }"
               :stage-status="stageStatuses(latestAssistantEntry.message, latestAssistantEntry.index)"
-              :available-stages="stageAvailability(latestAssistantEntry.message)"
+              :available-stages="stageAvailability(latestAssistantEntry.message, latestAssistantEntry.index)"
             />
           </div>
 
@@ -472,16 +473,6 @@ watch(latestAssistantFingerprint, async () => {
             >
               {{ t('conversationRecoveryRetry') }}
             </button>
-          </div>
-
-          <div
-            v-if="conversation.messages.length === 0"
-            class="rounded-[1.75rem] border border-dashed border-border bg-background/90 px-6 py-10 text-center"
-          >
-            <div class="text-lg font-semibold text-foreground">{{ t('startConversation') }}</div>
-            <p class="mt-2 text-sm leading-6 text-muted-foreground">
-              {{ t('askCouncilQuestion') }}
-            </p>
           </div>
 
           <div v-for="(message, index) in conversation.messages" :key="message.id || index" class="space-y-4">
@@ -544,16 +535,22 @@ watch(latestAssistantFingerprint, async () => {
               </div>
 
               <section
-                v-if="hasStageSection(message as AssistantMessage, 'stage1')"
+                v-if="shouldRenderStageSection(message as AssistantMessage, index, 'stage1')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage1')"
                 class="scroll-mt-24 space-y-4"
               >
                 <div
-                  v-if="(message as AssistantMessage).loading?.stage1 && !Object.keys((message as AssistantMessage).stream?.stage1 || {}).length"
+                  v-if="
+                    !((message as AssistantMessage).stage1 || Object.keys((message as AssistantMessage).stream?.stage1 || {}).length)
+                  "
                   class="rounded-[1.6rem] border border-dashed border-border/70 bg-background/60 px-5 py-5"
                 >
                   <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <LoaderCircle :size="16" class="animate-spin" />
+                    <LoaderCircle
+                      v-if="(message as AssistantMessage).loading?.stage1 || isAssistantActiveTurn(index)"
+                      :size="16"
+                      class="animate-spin"
+                    />
                     {{ t('stage1Subtitle') }}
                   </div>
                 </div>
@@ -568,17 +565,23 @@ watch(latestAssistantFingerprint, async () => {
               </section>
 
               <section
-                v-if="hasStageSection(message as AssistantMessage, 'stage2')"
+                v-if="shouldRenderStageSection(message as AssistantMessage, index, 'stage2')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage2')"
                 class="scroll-mt-24 space-y-4"
               >
                 <div
-                  v-if="(message as AssistantMessage).loading?.stage2 && !Object.keys((message as AssistantMessage).stream?.stage2 || {}).length"
+                  v-if="
+                    !((message as AssistantMessage).stage2 || Object.keys((message as AssistantMessage).stream?.stage2 || {}).length)
+                  "
                   class="rounded-[1.6rem] border border-dashed border-border/70 bg-background/60 px-5 py-5"
                 >
                   <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <LoaderCircle :size="16" class="animate-spin" />
-                    {{ t('stage2Subtitle') }}
+                    <LoaderCircle
+                      v-if="(message as AssistantMessage).loading?.stage2"
+                      :size="16"
+                      class="animate-spin"
+                    />
+                    {{ (message as AssistantMessage).loading?.stage2 ? t('stage2Subtitle') : t('stageWaitingRanking') }}
                   </div>
                 </div>
 
@@ -594,17 +597,28 @@ watch(latestAssistantFingerprint, async () => {
               </section>
 
               <section
-                v-if="hasStageSection(message as AssistantMessage, 'stage3')"
+                v-if="shouldRenderStageSection(message as AssistantMessage, index, 'stage3')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage3')"
                 class="scroll-mt-24 space-y-4"
               >
                 <div
-                  v-if="(message as AssistantMessage).loading?.stage3 && !((message as AssistantMessage).stream?.stage3?.response || (message as AssistantMessage).stream?.stage3?.thinking)"
+                  v-if="
+                    !(
+                      (message as AssistantMessage).stage3 ||
+                      (message as AssistantMessage).stream?.stage3?.response ||
+                      (message as AssistantMessage).stream?.stage3?.thinking ||
+                      (message as AssistantMessage).streamMeta?.stage3?.status === 'error'
+                    )
+                  "
                   class="rounded-[1.6rem] border border-dashed border-border/70 bg-background/60 px-5 py-5"
                 >
                   <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
-                    <LoaderCircle :size="16" class="animate-spin" />
-                    {{ t('stage3Subtitle') }}
+                    <LoaderCircle
+                      v-if="(message as AssistantMessage).loading?.stage3"
+                      :size="16"
+                      class="animate-spin"
+                    />
+                    {{ (message as AssistantMessage).loading?.stage3 ? t('stage3Subtitle') : t('stageWaitingSynthesis') }}
                   </div>
                 </div>
 
@@ -632,30 +646,14 @@ watch(latestAssistantFingerprint, async () => {
               stage3: stageSectionId(latestAssistantEntry.message.id, 'stage3'),
             }"
             :stage-status="stageStatuses(latestAssistantEntry.message, latestAssistantEntry.index)"
-            :available-stages="stageAvailability(latestAssistantEntry.message)"
+            :available-stages="stageAvailability(latestAssistantEntry.message, latestAssistantEntry.index)"
           />
         </aside>
       </div>
     </div>
 
     <div
-      v-if="conversation && canComposeInConversation"
-      class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6"
-    >
-      <div class="mx-auto w-full max-w-[92rem]">
-        <ChatComposer
-          v-model="draftValue"
-          :disabled="isLoading"
-          :is-loading="isLoading"
-          :provider-configured="providerConfigured"
-          @open-settings="emit('open-settings')"
-          @send="handleSend"
-        />
-      </div>
-    </div>
-
-    <div
-      v-else-if="conversation"
+      v-if="hasConversationMessages"
       class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6"
     >
       <div class="mx-auto flex w-full max-w-[92rem] flex-col gap-3 rounded-[1.5rem] border border-border/80 bg-card/90 px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
