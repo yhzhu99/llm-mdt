@@ -84,7 +84,8 @@ function joinText(parts: string[], separator = '\n\n') {
 function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 'reasoning_text'): string[] {
   if (value == null) return []
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return [String(value)]
+    const text = preferredType ? normalizeReasoningText(String(value)) : String(value)
+    return text ? [text] : []
   }
 
   if (Array.isArray(value)) {
@@ -99,13 +100,21 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
   const type = typeof record.type === 'string' ? record.type : ''
 
   if (preferredType === 'summary_text') {
-    const summaryText = normalizeStructuredText(record.summary_text ?? record.summaryText)
+    const summaryText = pickBestReasoningText(
+      normalizeStructuredText(record.summary_text),
+      normalizeStructuredText(record.summaryText),
+      type === 'summary_text' ? normalizeStructuredText(record.text) : '',
+    )
     if (summaryText) return [summaryText]
   }
 
   if (preferredType === 'reasoning_text') {
-    const reasoningText = normalizeStructuredText(
-      record.reasoning_text ?? record.reasoningText ?? record.reasoning_content ?? record.reasoningContent,
+    const reasoningText = pickBestReasoningText(
+      normalizeStructuredText(record.reasoning_text),
+      normalizeStructuredText(record.reasoningText),
+      normalizeStructuredText(record.reasoning_content),
+      normalizeStructuredText(record.reasoningContent),
+      type === 'reasoning_text' ? normalizeStructuredText(record.text) : '',
     )
     if (reasoningText) return [reasoningText]
   }
@@ -120,7 +129,7 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
   }
 
   if (!preferredType || !type || type === preferredType) {
-    const text = normalizeStructuredText(record.text)
+    const text = preferredType ? normalizeReasoningText(normalizeStructuredText(record.text)) : normalizeStructuredText(record.text)
     if (text) {
       return [text]
     }
@@ -134,31 +143,31 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
 }
 
 function extractSummaryText(value: unknown) {
-  return joinText(normalizeTextParts(value, 'summary_text'))
+  return normalizeReasoningText(joinText(normalizeTextParts(value, 'summary_text')))
 }
 
 function extractDetailedReasoningText(value: unknown) {
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    return String(value)
+    return normalizeReasoningText(String(value))
   }
 
   const typedParts = normalizeTextParts(value, 'reasoning_text')
   if (typedParts.length > 0) {
-    return joinText(typedParts)
+    return normalizeReasoningText(joinText(typedParts))
   }
 
   if (Array.isArray(value)) {
-    return joinText(value.map((item) => normalizeStructuredText(item)))
+    return normalizeReasoningText(joinText(value.map((item) => normalizeStructuredText(item))))
   }
 
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
     if (record.content != null) {
-      const contentText = normalizeStructuredText(record.content)
+      const contentText = normalizeReasoningText(normalizeStructuredText(record.content))
       if (contentText) return contentText
     }
     if (record.text != null) {
-      const text = normalizeStructuredText(record.text)
+      const text = normalizeReasoningText(normalizeStructuredText(record.text))
       if (text) return text
     }
   }
@@ -307,26 +316,29 @@ function extractUnifiedReasoningText(source: Record<string, unknown>) {
   const reasoningObject =
     source.reasoning && typeof source.reasoning === 'object' ? (source.reasoning as Record<string, unknown>) : null
 
-  const summary = extractSummaryText(
-    source.reasoning_summary ??
-      source.reasoning_summary_text ??
-      source.reasoningSummary ??
-      reasoningObject?.summary ??
-      reasoningObject?.summary_text ??
-      reasoningObject?.summaryText,
+  const summary = pickBestReasoningText(
+    extractSummaryText(source.reasoning_summary),
+    extractSummaryText(source.reasoning_summary_text),
+    extractSummaryText(source.reasoningSummary),
+    extractSummaryText(source.summary),
+    extractSummaryText(reasoningObject?.summary),
+    extractSummaryText(reasoningObject?.summary_text),
+    extractSummaryText(reasoningObject?.summaryText),
   )
-  const details = extractDetailedReasoningText(
-    source.reasoning_details ??
-      source.reasoningDetails ??
-      source.thinking ??
-      source.reasoning_content ??
-      source.reasoningContent ??
-      source.reasoning_text ??
-      source.reasoningText ??
-      source.reasoning_message ??
-      (typeof source.reasoning === 'string'
-        ? source.reasoning
-        : reasoningObject?.content ?? reasoningObject?.details ?? reasoningObject?.text ?? reasoningObject?.reasoning_text),
+  const details = pickBestReasoningText(
+    extractDetailedReasoningText(source.reasoning_details),
+    extractDetailedReasoningText(source.reasoningDetails),
+    extractDetailedReasoningText(source.thinking),
+    extractDetailedReasoningText(source.reasoning_content),
+    extractDetailedReasoningText(source.reasoningContent),
+    extractDetailedReasoningText(source.reasoning_text),
+    extractDetailedReasoningText(source.reasoningText),
+    extractDetailedReasoningText(source.reasoning_message),
+    extractDetailedReasoningText(typeof source.reasoning === 'string' ? source.reasoning : ''),
+    extractDetailedReasoningText(reasoningObject?.content),
+    extractDetailedReasoningText(reasoningObject?.details),
+    extractDetailedReasoningText(reasoningObject?.text),
+    extractDetailedReasoningText(reasoningObject?.reasoning_text),
   )
 
   return mergeReasoningText(summary, details)
@@ -447,20 +459,18 @@ function buildDiagnostics(
 function extractEventText(payload: Record<string, unknown>) {
   const part = payload.part && typeof payload.part === 'object' ? (payload.part as Record<string, unknown>) : null
 
-  return normalizeReasoningText(
-    normalizeStructuredText(
-      payload.delta ??
-        payload.text ??
-        payload.reasoning ??
-        payload.reasoning_text ??
-        payload.reasoning_summary ??
-        payload.summary_text ??
-        part?.delta ??
-        part?.text ??
-        part?.summary_text ??
-        part?.summary ??
-        part?.content,
-    ),
+  return pickBestReasoningText(
+    normalizeStructuredText(payload.delta),
+    normalizeStructuredText(payload.text),
+    normalizeStructuredText(part?.delta),
+    normalizeStructuredText(part?.text),
+    normalizeStructuredText(part?.summary_text),
+    normalizeStructuredText(payload.summary_text),
+    normalizeStructuredText(payload.reasoning_text),
+    normalizeStructuredText(payload.reasoning),
+    normalizeStructuredText(payload.reasoning_summary),
+    normalizeStructuredText(part?.summary),
+    normalizeStructuredText(part?.content),
   )
 }
 
