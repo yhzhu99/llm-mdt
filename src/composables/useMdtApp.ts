@@ -1,4 +1,4 @@
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, toRaw, watch } from 'vue'
 import { api } from '@/api'
 import { useI18n } from '@/i18n'
 import type {
@@ -20,11 +20,13 @@ import type {
 import { getProviderStatusText, groupConversationsByDate, toRuntimeConfig } from '@/utils/conversations'
 
 const cloneValue = <T>(value: T): T => {
+  const source = typeof value === 'object' && value !== null ? toRaw(value) : value
+
   if (typeof globalThis.structuredClone === 'function') {
-    return globalThis.structuredClone(value)
+    return globalThis.structuredClone(source)
   }
 
-  return JSON.parse(JSON.stringify(value)) as T
+  return JSON.parse(JSON.stringify(source)) as T
 }
 
 type LiveAssistantMessage = AssistantConversationMessage & {
@@ -62,6 +64,23 @@ const createAssistantMessage = (councilOrder: string[]): LiveAssistantMessage =>
     stage3: false,
   },
 })
+
+const createUserMessage = (content: string) => ({
+  id:
+    (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
+    `user_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+  role: 'user' as const,
+  content,
+  created_at: new Date().toISOString(),
+})
+
+const markStatusMapAsError = (statuses: Record<string, StreamStatusMeta>, message: string) =>
+  Object.fromEntries(
+    Object.entries(statuses).map(([model, meta]) => [
+      model,
+      meta.status === 'complete' ? meta : { status: 'error' as const, message },
+    ]),
+  ) as Record<string, StreamStatusMeta>
 
 const ensureLiveAssistantMessage = (message: AssistantConversationMessage): LiveAssistantMessage => ({
   ...message,
@@ -408,58 +427,86 @@ export function useMdtApp() {
     isLoading.value = true
     isRefreshingAfterStream.value = false
 
+    const assistantMessage = createAssistantMessage(runtimeConfig.value.council_models)
+    const userMessage = createUserMessage(content)
+    let receivedCompleteEvent = false
+
+    const updateAssistantMessage = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
+      updateCurrentConversation((conversation) => {
+        if (!conversation) return conversation
+        const index = conversation.messages.findIndex(
+          (message) => message.role === 'assistant' && message.id === assistantMessage.id,
+        )
+        if (index === -1) return conversation
+
+        const target = ensureLiveAssistantMessage(conversation.messages[index] as AssistantConversationMessage)
+        conversation.messages[index] = recipe(target)
+        return conversation
+      })
+    }
+
+    const setAssistantErrorState = (errorMessage: string) => {
+      const nextErrorMessage = String(errorMessage || t('orchestratorRunFailed')).trim() || t('orchestratorRunFailed')
+
+      updateAssistantMessage((message) => ({
+        ...message,
+        stage3: message.stage3 || {
+          model: runtimeConfig.value.chairman_model || 'chairman',
+          response: message.stream.stage3.response || nextErrorMessage,
+          reasoning_details: null,
+        },
+        stream: {
+          ...message.stream,
+          stage3: {
+            response: message.stream.stage3.response || nextErrorMessage,
+            thinking: message.stream.stage3.thinking,
+          },
+        },
+        streamMeta: {
+          stage1: markStatusMapAsError(message.streamMeta.stage1, nextErrorMessage),
+          stage2: markStatusMapAsError(message.streamMeta.stage2, nextErrorMessage),
+          stage3: { status: 'error', message: nextErrorMessage },
+        },
+        loading: {
+          stage1: false,
+          stage2: false,
+          stage3: false,
+        },
+      }))
+    }
+
     try {
       const optimisticCreatedAt = currentConversation.value?.created_at || new Date().toISOString()
+      const optimisticTitle = String(currentConversation.value?.title || t('conversationUntitled')).trim()
+      const existingMessageCount = Array.isArray(currentConversation.value?.messages)
+        ? currentConversation.value.messages.length
+        : 0
 
-      updateCurrentConversation((conversation) =>
-        conversation || {
+      updateCurrentConversation((conversation) => {
+        const nextConversation = conversation || {
           id: conversationIdForRequest,
           project_id: activeProjectId,
           created_at: optimisticCreatedAt,
-          title: t('conversationUntitled'),
+          title: optimisticTitle || t('conversationUntitled'),
           messages: [],
-        },
-      )
+        }
+
+        return {
+          ...nextConversation,
+          title:
+            String(nextConversation.title || optimisticTitle || t('conversationUntitled')).trim() ||
+            t('conversationUntitled'),
+          messages: [...nextConversation.messages, userMessage, assistantMessage],
+        }
+      })
 
       upsertConversationInSidebar({
         id: conversationIdForRequest,
         project_id: activeProjectId,
         created_at: optimisticCreatedAt,
-        title: currentConversation.value?.title || t('conversationUntitled'),
-        message_count: 1,
+        title: optimisticTitle || t('conversationUntitled'),
+        message_count: existingMessageCount + 2,
       })
-
-      updateCurrentConversation((conversation) => {
-        if (!conversation) return conversation
-        conversation.messages.push({
-          role: 'user',
-          content,
-          created_at: new Date().toISOString(),
-        })
-        return conversation
-      })
-
-      const assistantMessage = createAssistantMessage(runtimeConfig.value.council_models)
-
-      updateCurrentConversation((conversation) => {
-        if (!conversation) return conversation
-        conversation.messages.push(assistantMessage)
-        return conversation
-      })
-
-      const updateAssistantMessage = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
-        updateCurrentConversation((conversation) => {
-          if (!conversation) return conversation
-          const index = conversation.messages.findIndex(
-            (message) => message.role === 'assistant' && message.id === assistantMessage.id,
-          )
-          if (index === -1) return conversation
-
-          const target = ensureLiveAssistantMessage(conversation.messages[index] as AssistantConversationMessage)
-          conversation.messages[index] = recipe(target)
-          return conversation
-        })
-      }
 
       const queue: Array<(message: LiveAssistantMessage) => LiveAssistantMessage> = []
       let scheduled = false
@@ -475,7 +522,6 @@ export function useMdtApp() {
         })
       }
 
-      let receivedCompleteEvent = false
       await api.sendMessageStream(conversationIdForRequest, { content, locale: locale.value }, async (_eventType, event) => {
         switch (event.type) {
           case 'stage1_start':
@@ -718,6 +764,7 @@ export function useMdtApp() {
             break
           case 'error':
             lastProviderError.value = event.message || t('orchestratorRunFailed')
+            setAssistantErrorState(lastProviderError.value)
             isLoading.value = false
             break
         }
@@ -736,13 +783,9 @@ export function useMdtApp() {
     } catch (error) {
       console.error('Failed to send message', error)
       lastProviderError.value = error instanceof Error ? error.message : String(error)
-      updateCurrentConversation((conversation) => {
-        if (!conversation) return conversation
-        if (conversation.messages.length >= 2) {
-          conversation.messages.splice(-2, 2)
-        }
-        return conversation
-      })
+      if (!receivedCompleteEvent) {
+        setAssistantErrorState(lastProviderError.value)
+      }
       isLoading.value = false
       isRefreshingAfterStream.value = false
     }
