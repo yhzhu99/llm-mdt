@@ -333,7 +333,8 @@ export function useMdtApp() {
       ...state,
       ...updates,
       lastActivityAt: now,
-      isRecovering: typeof updates.isRecovering === 'boolean' ? updates.isRecovering : false,
+      isRecovering:
+        typeof updates.isRecovering === 'boolean' ? updates.isRecovering : Boolean(state.isRecovering),
       hasUnreadUpdate:
         typeof updates.hasUnreadUpdate === 'boolean'
           ? updates.hasUnreadUpdate
