@@ -250,9 +250,6 @@ onBeforeUnmount(() => {
                   :placeholder="t('settingsTitleModelPlaceholder')"
                   class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring"
                 />
-                <div class="text-xs text-muted-foreground">
-                  {{ t('settingsTitleModelHelp') }}
-                </div>
               </label>
             </div>
 
