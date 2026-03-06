@@ -7,6 +7,7 @@ import type {
   AssistantStreamMeta,
   AssistantStreamState,
   Conversation,
+  ConversationRunState,
   ConversationSummary,
   ProjectSummary,
   ProviderSettings,
@@ -74,6 +75,39 @@ const createUserMessage = (content: string) => ({
   created_at: new Date().toISOString(),
 })
 
+const createIdleRunState = (): ConversationRunState => ({
+  requestId: null,
+  status: 'idle',
+  stage: null,
+  startedAt: null,
+  completedAt: null,
+  lastActivityAt: null,
+  lastError: '',
+  hasUnreadUpdate: false,
+})
+
+const createConversationSnapshot = ({
+  id,
+  projectId,
+  createdAt,
+  title,
+}: {
+  id: string
+  projectId: string
+  createdAt: string
+  title: string
+}): Conversation => ({
+  id,
+  project_id: projectId,
+  created_at: createdAt,
+  title,
+  messages: [],
+})
+
+const createRequestId = () =>
+  (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
+  `request_${Date.now()}_${Math.random().toString(16).slice(2)}`
+
 const markStatusMapAsError = (statuses: Record<string, StreamStatusMeta>, message: string) =>
   Object.fromEntries(
     Object.entries(statuses).map(([model, meta]) => [
@@ -107,16 +141,17 @@ const ensureLiveAssistantMessage = (message: AssistantConversationMessage): Live
   },
 })
 
+const getRunTimestamp = (state: ConversationRunState) =>
+  new Date(state.lastActivityAt || state.completedAt || state.startedAt || 0).getTime()
+
 export function useMdtApp() {
   const { locale, setLocale, t } = useI18n()
   const conversations = ref<ConversationSummary[]>([])
+  const conversationCache = ref<Record<string, Conversation>>({})
+  const conversationRunStates = ref<Record<string, ConversationRunState>>({})
   const projects = ref<ProjectSummary[]>([])
   const currentConversationId = ref<string | null>(null)
   const currentProjectId = ref<string | null>(null)
-  const currentConversation = ref<Conversation | null>(null)
-  const isLoading = ref(false)
-  const isRefreshingAfterStream = ref(false)
-  const draftConversationId = ref<string | null>(null)
   const draftMessage = ref('')
   const providerSettings = ref<ProviderSettings | null>(null)
   const isSettingsOpen = ref(false)
@@ -127,19 +162,132 @@ export function useMdtApp() {
   const currentProject = computed(
     () => projects.value.find((project) => project.id === currentProjectId.value) || null,
   )
+  const currentConversation = computed(() =>
+    currentConversationId.value ? conversationCache.value[currentConversationId.value] || null : null,
+  )
+  const currentConversationRunState = computed(() =>
+    currentConversationId.value
+      ? conversationRunStates.value[currentConversationId.value] || createIdleRunState()
+      : createIdleRunState(),
+  )
+  const currentConversationRunning = computed(() => currentConversationRunState.value.status === 'running')
+  const hasRunningConversations = computed(() =>
+    Object.values(conversationRunStates.value).some((state) => state.status === 'running'),
+  )
+  const latestConversationError = computed(() => {
+    const erroredStates = Object.values(conversationRunStates.value)
+      .filter((state) => state.status === 'error' && state.lastError)
+      .sort((left, right) => getRunTimestamp(right) - getRunTimestamp(left))
+
+    return erroredStates[0]?.lastError || ''
+  })
+  const providerErrorMessage = computed(() => latestConversationError.value || lastProviderError.value)
   const suggestedProjectName = computed(() => buildProjectName())
   const runtimeConfig = computed<RuntimeConfig>(() => toRuntimeConfig(providerSettings.value))
   const groupedConversations = computed(() => groupConversationsByDate(conversations.value, locale.value))
   const providerConfigured = computed(() => runtimeConfig.value.configured)
   const providerStatus = computed<'ready' | 'running' | 'error' | 'unconfigured'>(() => {
-    if (isLoading.value) return 'running'
-    if (lastProviderError.value) return 'error'
+    if (hasRunningConversations.value) return 'running'
+    if (providerErrorMessage.value) return 'error'
     if (providerConfigured.value) return 'ready'
     return 'unconfigured'
   })
   const providerStatusText = computed(() =>
-    getProviderStatusText(providerStatus.value, providerSettings.value, lastProviderError.value, locale.value),
+    getProviderStatusText(providerStatus.value, providerSettings.value, providerErrorMessage.value, locale.value),
   )
+
+  const isActiveRequest = (conversationId: string, requestId: string) =>
+    conversationRunStates.value[conversationId]?.requestId === requestId
+
+  const getConversationSummary = (conversationId: string) =>
+    conversations.value.find((entry) => entry.id === conversationId) || null
+
+  const getRunState = (conversationId: string) => conversationRunStates.value[conversationId] || createIdleRunState()
+
+  const setConversationInCache = (conversation: Conversation) => {
+    conversationCache.value[conversation.id] = cloneValue(conversation)
+    return conversationCache.value[conversation.id]!
+  }
+
+  const removeConversationFromCache = (conversationId: string) => {
+    if (!(conversationId in conversationCache.value)) return
+    const nextCache = { ...conversationCache.value }
+    delete nextCache[conversationId]
+    conversationCache.value = nextCache
+  }
+
+  const removeConversationRunState = (conversationId: string) => {
+    if (!(conversationId in conversationRunStates.value)) return
+    const nextStates = { ...conversationRunStates.value }
+    delete nextStates[conversationId]
+    conversationRunStates.value = nextStates
+  }
+
+  const updateConversationById = (
+    conversationId: string,
+    updater: (conversation: Conversation | null) => Conversation | null,
+  ) => {
+    const current = conversationCache.value[conversationId] ? cloneValue(conversationCache.value[conversationId]) : null
+    const next = updater(current)
+    if (!next) {
+      removeConversationFromCache(conversationId)
+      return null
+    }
+    conversationCache.value[conversationId] = next
+    return next
+  }
+
+  const updateAssistantMessageInConversation = (
+    conversationId: string,
+    assistantMessageId: string,
+    recipe: (message: LiveAssistantMessage) => LiveAssistantMessage,
+  ) => {
+    updateConversationById(conversationId, (conversation) => {
+      if (!conversation) return conversation
+      const index = conversation.messages.findIndex(
+        (message) => message.role === 'assistant' && message.id === assistantMessageId,
+      )
+      if (index === -1) return conversation
+
+      const target = ensureLiveAssistantMessage(conversation.messages[index] as AssistantConversationMessage)
+      conversation.messages[index] = recipe(target)
+      return conversation
+    })
+  }
+
+  const updateConversationRunState = (
+    conversationId: string,
+    recipe: (state: ConversationRunState) => ConversationRunState,
+  ) => {
+    const next = recipe({ ...createIdleRunState(), ...cloneValue(getRunState(conversationId)) })
+    conversationRunStates.value[conversationId] = next
+    return next
+  }
+
+  const clearConversationUnread = (conversationId: string) => {
+    if (!(conversationId in conversationRunStates.value)) return
+    updateConversationRunState(conversationId, (state) => ({ ...state, hasUnreadUpdate: false }))
+  }
+
+  const touchConversationActivity = (
+    conversationId: string,
+    requestId: string,
+    updates: Partial<ConversationRunState> = {},
+  ) => {
+    if (!isActiveRequest(conversationId, requestId)) return
+    const now = new Date().toISOString()
+    updateConversationRunState(conversationId, (state) => ({
+      ...state,
+      ...updates,
+      lastActivityAt: now,
+      hasUnreadUpdate:
+        typeof updates.hasUnreadUpdate === 'boolean'
+          ? updates.hasUnreadUpdate
+          : currentConversationId.value === conversationId
+            ? false
+            : true,
+    }))
+  }
 
   const loadProjects = async () => {
     try {
@@ -149,26 +297,37 @@ export function useMdtApp() {
       if (!nextProjects.length) {
         currentProjectId.value = null
         conversations.value = []
-        return
+        return nextProjects
       }
 
       if (!currentProjectId.value || !nextProjects.some((project) => project.id === currentProjectId.value)) {
         currentProjectId.value = nextProjects[0]!.id
       }
+
+      return nextProjects
     } catch (error) {
       console.error('Failed to load projects', error)
+      return []
     }
   }
 
   const loadConversations = async (projectId = currentProjectId.value) => {
     try {
       if (!projectId) {
-        conversations.value = []
-        return
+        if (!currentProjectId.value) {
+          conversations.value = []
+        }
+        return []
       }
-      conversations.value = await api.listConversations(projectId)
+
+      const nextConversations = await api.listConversations(projectId)
+      if (projectId === currentProjectId.value) {
+        conversations.value = nextConversations
+      }
+      return nextConversations
     } catch (error) {
       console.error('Failed to load conversations', error)
+      return []
     }
   }
 
@@ -195,25 +354,21 @@ export function useMdtApp() {
     setLocale(saved.locale)
   }
 
-  const loadConversation = async (conversationId: string) => {
+  const loadConversation = async (conversationId: string, options: { force?: boolean } = {}) => {
+    const cached = conversationCache.value[conversationId]
+    const runState = conversationRunStates.value[conversationId]
+
+    if (!options.force && cached && runState?.status === 'running') {
+      return cached
+    }
+
     try {
       const conversation = await api.getConversation(conversationId)
-      if (currentProjectId.value && conversation.project_id !== currentProjectId.value) {
-        currentConversation.value = null
-        currentConversationId.value = null
-        return
-      }
-      currentConversation.value = conversation
+      return setConversationInCache(conversation)
     } catch (error) {
       console.error('Failed to load conversation', error)
-      if (currentConversationId.value === conversationId) {
-        currentConversation.value = null
-      }
+      return conversationCache.value[conversationId] || null
     }
-  }
-
-  const updateCurrentConversation = (updater: (conversation: Conversation | null) => Conversation | null) => {
-    currentConversation.value = updater(currentConversation.value ? cloneValue(currentConversation.value) : null)
   }
 
   const upsertConversationInSidebar = (
@@ -299,13 +454,26 @@ export function useMdtApp() {
 
   const resetDraftState = () => {
     currentConversationId.value = null
-    currentConversation.value = null
-    draftConversationId.value = null
     draftMessage.value = ''
   }
 
   const newConversation = () => {
     resetDraftState()
+  }
+
+  const removeProjectArtifacts = (projectId: string) => {
+    const nextCache = { ...conversationCache.value }
+    const nextRunStates = { ...conversationRunStates.value }
+
+    for (const [conversationId, conversation] of Object.entries(conversationCache.value)) {
+      if (conversation.project_id === projectId) {
+        delete nextCache[conversationId]
+        delete nextRunStates[conversationId]
+      }
+    }
+
+    conversationCache.value = nextCache
+    conversationRunStates.value = nextRunStates
   }
 
   const createProject = async (name: string) => {
@@ -335,6 +503,7 @@ export function useMdtApp() {
     try {
       const wasCurrentProject = currentProjectId.value === projectId
       const result = await api.deleteProject(projectId)
+      removeProjectArtifacts(projectId)
       await loadProjects()
 
       if (wasCurrentProject || !projects.value.some((project) => project.id === currentProjectId.value)) {
@@ -351,6 +520,8 @@ export function useMdtApp() {
   const deleteConversation = async (conversationId: string) => {
     try {
       await api.deleteConversation(conversationId)
+      removeConversationFromCache(conversationId)
+      removeConversationRunState(conversationId)
       if (currentConversationId.value === conversationId) {
         newConversation()
       }
@@ -364,9 +535,23 @@ export function useMdtApp() {
   const renameConversation = async (conversationId: string, title: string) => {
     try {
       await api.renameConversation(conversationId, title)
+      upsertConversationInSidebar({
+        id: conversationId,
+        project_id:
+          conversationCache.value[conversationId]?.project_id ||
+          getConversationSummary(conversationId)?.project_id ||
+          currentProjectId.value ||
+          '',
+        title,
+      })
+      updateConversationById(conversationId, (conversation) => {
+        if (!conversation) return conversation
+        conversation.title = title
+        return conversation
+      })
       await loadConversations(currentProjectId.value)
-      if (currentConversationId.value === conversationId) {
-        await loadConversation(conversationId)
+      if (conversationRunStates.value[conversationId]?.status !== 'running') {
+        await loadConversation(conversationId, { force: true })
       }
     } catch (error) {
       console.error('Failed to rename conversation', error)
@@ -375,6 +560,7 @@ export function useMdtApp() {
 
   const selectConversation = (conversationId: string) => {
     currentConversationId.value = conversationId
+    clearConversationUnread(conversationId)
   }
 
   const selectProject = (projectId: string) => {
@@ -384,10 +570,16 @@ export function useMdtApp() {
   }
 
   const ensureConversationForSend = async () => {
-    if (currentConversationId.value) return currentConversationId.value
-    if (draftConversationId.value) {
-      currentConversationId.value = draftConversationId.value
-      return draftConversationId.value
+    if (currentConversationId.value) {
+      const cachedConversation = conversationCache.value[currentConversationId.value]
+      if (cachedConversation) {
+        return cloneValue(cachedConversation)
+      }
+
+      const loadedConversation = await loadConversation(currentConversationId.value, { force: true })
+      if (loadedConversation) {
+        return cloneValue(loadedConversation)
+      }
     }
 
     if (!currentProjectId.value) {
@@ -399,50 +591,62 @@ export function useMdtApp() {
     }
 
     const conversation = await api.createConversationForProject(currentProjectId.value, t('conversationUntitled'))
-    draftConversationId.value = conversation.id
+    setConversationInCache(conversation)
     currentConversationId.value = conversation.id
-    return conversation.id
+    upsertConversationInSidebar({
+      id: conversation.id,
+      project_id: conversation.project_id,
+      created_at: conversation.created_at,
+      title: conversation.title,
+      message_count: conversation.messages.length,
+    })
+    await loadProjects()
+    return cloneValue(conversation)
   }
 
-  const sendMessage = async (content: string) => {
-    if (!providerConfigured.value) {
-      lastProviderError.value = t('errorConfigureProviderBeforeSend')
-      openSettings()
-      return
-    }
-
-    let conversationIdForRequest: string
-
+  const syncConversationAfterRun = async (conversationId: string, projectId: string, requestId: string) => {
     try {
-      conversationIdForRequest = await ensureConversationForSend()
+      if (projectId === currentProjectId.value) {
+        await loadConversations(projectId)
+      }
+      await loadConversation(conversationId, { force: true })
+      await loadProjects()
     } catch (error) {
-      console.error('Failed to create conversation', error)
-      return
+      console.error('Failed to refresh conversation after run', error)
+    } finally {
+      if (isActiveRequest(conversationId, requestId)) {
+        const state = getRunState(conversationId)
+        if (state.status === 'running') {
+          const now = new Date().toISOString()
+          updateConversationRunState(conversationId, (current) => ({
+            ...current,
+            status: 'error',
+            completedAt: now,
+            lastActivityAt: now,
+            lastError: current.lastError || t('orchestratorRunFailed'),
+            hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+          }))
+        }
+      }
     }
+  }
 
-    const activeProjectId = currentProjectId.value
-    if (!activeProjectId) return
-
-    lastProviderError.value = ''
-    isLoading.value = true
-    isRefreshingAfterStream.value = false
-
-    const assistantMessage = createAssistantMessage(runtimeConfig.value.council_models)
-    const userMessage = createUserMessage(content)
-    let receivedCompleteEvent = false
-
+  const runConversationTask = async ({
+    conversationId,
+    projectId,
+    requestId,
+    assistantMessageId,
+    content,
+  }: {
+    conversationId: string
+    projectId: string
+    requestId: string
+    assistantMessageId: string
+    content: string
+  }) => {
     const updateAssistantMessage = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
-      updateCurrentConversation((conversation) => {
-        if (!conversation) return conversation
-        const index = conversation.messages.findIndex(
-          (message) => message.role === 'assistant' && message.id === assistantMessage.id,
-        )
-        if (index === -1) return conversation
-
-        const target = ensureLiveAssistantMessage(conversation.messages[index] as AssistantConversationMessage)
-        conversation.messages[index] = recipe(target)
-        return conversation
-      })
+      if (!isActiveRequest(conversationId, requestId)) return
+      updateAssistantMessageInConversation(conversationId, assistantMessageId, recipe)
     }
 
     const setAssistantErrorState = (errorMessage: string) => {
@@ -475,60 +679,32 @@ export function useMdtApp() {
       }))
     }
 
+    const queue: Array<(message: LiveAssistantMessage) => LiveAssistantMessage> = []
+    let scheduled = false
+    const enqueueAssistantUpdate = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
+      queue.push(recipe)
+      if (scheduled) return
+      scheduled = true
+      window.requestAnimationFrame(() => {
+        scheduled = false
+        if (!isActiveRequest(conversationId, requestId)) return
+        const jobs = queue.splice(0, queue.length)
+        if (jobs.length === 0) return
+        updateAssistantMessage((message) => jobs.reduce((current, job) => job(current), message))
+      })
+    }
+
     try {
-      const optimisticCreatedAt = currentConversation.value?.created_at || new Date().toISOString()
-      const optimisticTitle = String(currentConversation.value?.title || t('conversationUntitled')).trim()
-      const existingMessageCount = Array.isArray(currentConversation.value?.messages)
-        ? currentConversation.value.messages.length
-        : 0
+      await api.sendMessageStream(conversationId, { content, locale: locale.value }, async (_eventType, event) => {
+        if (!isActiveRequest(conversationId, requestId)) return
 
-      updateCurrentConversation((conversation) => {
-        const nextConversation = conversation || {
-          id: conversationIdForRequest,
-          project_id: activeProjectId,
-          created_at: optimisticCreatedAt,
-          title: optimisticTitle || t('conversationUntitled'),
-          messages: [],
-        }
-
-        return {
-          ...nextConversation,
-          title:
-            String(nextConversation.title || optimisticTitle || t('conversationUntitled')).trim() ||
-            t('conversationUntitled'),
-          messages: [...nextConversation.messages, userMessage, assistantMessage],
-        }
-      })
-
-      upsertConversationInSidebar({
-        id: conversationIdForRequest,
-        project_id: activeProjectId,
-        created_at: optimisticCreatedAt,
-        title: optimisticTitle || t('conversationUntitled'),
-        message_count: existingMessageCount + 2,
-      })
-
-      const queue: Array<(message: LiveAssistantMessage) => LiveAssistantMessage> = []
-      let scheduled = false
-      const enqueueAssistantUpdate = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
-        queue.push(recipe)
-        if (scheduled) return
-        scheduled = true
-        window.requestAnimationFrame(() => {
-          scheduled = false
-          const jobs = queue.splice(0, queue.length)
-          if (jobs.length === 0) return
-          updateAssistantMessage((message) => jobs.reduce((current, job) => job(current), message))
-        })
-      }
-
-      await api.sendMessageStream(conversationIdForRequest, { content, locale: locale.value }, async (_eventType, event) => {
         switch (event.type) {
           case 'stage1_start':
             updateAssistantMessage((message) => ({
               ...message,
               loading: { stage1: true, stage2: message.loading.stage2, stage3: message.loading.stage3 },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1', lastError: '' })
             break
           case 'stage1_model_start': {
             const model = event.model
@@ -549,6 +725,7 @@ export function useMdtApp() {
                 },
               },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
             break
           }
           case 'stage1_model_delta': {
@@ -566,6 +743,7 @@ export function useMdtApp() {
                 },
               }
             })
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
             break
           }
           case 'stage1_model_error': {
@@ -580,6 +758,7 @@ export function useMdtApp() {
                 },
               },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
             break
           }
           case 'stage1_complete': {
@@ -602,6 +781,7 @@ export function useMdtApp() {
               },
               loading: { stage1: false, stage2: message.loading.stage2, stage3: message.loading.stage3 },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage1' })
             break
           }
           case 'stage2_start':
@@ -609,6 +789,7 @@ export function useMdtApp() {
               ...message,
               loading: { stage1: message.loading.stage1, stage2: true, stage3: message.loading.stage3 },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
             break
           case 'stage2_model_start': {
             const model = event.model
@@ -629,6 +810,7 @@ export function useMdtApp() {
                 },
               },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
             break
           }
           case 'stage2_model_delta': {
@@ -646,6 +828,7 @@ export function useMdtApp() {
                 },
               }
             })
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
             break
           }
           case 'stage2_model_error': {
@@ -660,6 +843,7 @@ export function useMdtApp() {
                 },
               },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
             break
           }
           case 'stage2_complete': {
@@ -683,6 +867,7 @@ export function useMdtApp() {
               },
               loading: { stage1: message.loading.stage1, stage2: false, stage3: message.loading.stage3 },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage2' })
             break
           }
           case 'stage3_start':
@@ -698,6 +883,7 @@ export function useMdtApp() {
               },
               loading: { stage1: message.loading.stage1, stage2: message.loading.stage2, stage3: true },
             }))
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage3' })
             break
           case 'stage3_delta': {
             const { delta_type, text } = event
@@ -713,6 +899,7 @@ export function useMdtApp() {
                 },
               }
             })
+            touchConversationActivity(conversationId, requestId, { status: 'running', stage: 'stage3' })
             break
           }
           case 'stage3_error': {
@@ -725,6 +912,12 @@ export function useMdtApp() {
               },
             }))
             lastProviderError.value = errorMessage
+            touchConversationActivity(conversationId, requestId, {
+              status: 'error',
+              stage: 'stage3',
+              lastError: errorMessage,
+              completedAt: new Date().toISOString(),
+            })
             break
           }
           case 'stage3_complete': {
@@ -738,68 +931,177 @@ export function useMdtApp() {
               },
               loading: { stage1: message.loading.stage1, stage2: message.loading.stage2, stage3: false },
             }))
+            touchConversationActivity(conversationId, requestId, {
+              status: getRunState(conversationId).status === 'error' ? 'error' : 'running',
+              stage: 'stage3',
+            })
             break
           }
           case 'title_complete': {
             const title = event.data.title
             if (title) {
               upsertConversationInSidebar({
-                id: conversationIdForRequest,
-                project_id: activeProjectId,
+                id: conversationId,
+                project_id: projectId,
                 title,
               })
-              updateCurrentConversation((conversation) => {
+              updateConversationById(conversationId, (conversation) => {
                 if (!conversation) return conversation
                 conversation.title = title
                 return conversation
               })
             }
-            await loadConversations(activeProjectId)
+            if (projectId === currentProjectId.value) {
+              void loadConversations(projectId)
+            }
             break
           }
-          case 'complete':
-            receivedCompleteEvent = true
-            await loadConversations(activeProjectId)
-            isLoading.value = false
+          case 'complete': {
+            const now = new Date().toISOString()
+            updateConversationRunState(conversationId, (state) => ({
+              ...state,
+              status: state.status === 'error' ? 'error' : 'complete',
+              stage: 'stage3',
+              completedAt: now,
+              lastActivityAt: now,
+              hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+            }))
+            if (getRunState(conversationId).status !== 'error') {
+              lastProviderError.value = ''
+            }
             break
-          case 'error':
-            lastProviderError.value = event.message || t('orchestratorRunFailed')
-            setAssistantErrorState(lastProviderError.value)
-            isLoading.value = false
+          }
+          case 'error': {
+            const errorMessage = event.message || t('orchestratorRunFailed')
+            lastProviderError.value = errorMessage
+            setAssistantErrorState(errorMessage)
+            const now = new Date().toISOString()
+            updateConversationRunState(conversationId, (state) => ({
+              ...state,
+              status: 'error',
+              completedAt: now,
+              lastActivityAt: now,
+              lastError: errorMessage,
+              hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+            }))
             break
+          }
         }
       })
-
-      isRefreshingAfterStream.value = true
-      await loadConversations(activeProjectId)
-      await loadConversation(conversationIdForRequest)
-      await loadProjects()
-      isRefreshingAfterStream.value = false
-      draftConversationId.value =
-        draftConversationId.value === conversationIdForRequest ? null : draftConversationId.value
-      if (!receivedCompleteEvent) {
-        isLoading.value = false
-      }
     } catch (error) {
-      console.error('Failed to send message', error)
-      lastProviderError.value = error instanceof Error ? error.message : String(error)
-      if (!receivedCompleteEvent) {
-        setAssistantErrorState(lastProviderError.value)
-      }
-      isLoading.value = false
-      isRefreshingAfterStream.value = false
+      if (!isActiveRequest(conversationId, requestId)) return
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      lastProviderError.value = errorMessage
+      setAssistantErrorState(errorMessage)
+      const now = new Date().toISOString()
+      updateConversationRunState(conversationId, (state) => ({
+        ...state,
+        status: 'error',
+        completedAt: now,
+        lastActivityAt: now,
+        lastError: errorMessage,
+        hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+      }))
+    } finally {
+      await syncConversationAfterRun(conversationId, projectId, requestId)
     }
   }
 
-  watch([currentConversationId, currentProjectId, isLoading, isRefreshingAfterStream], async ([conversationId, projectId, loading, refreshing]) => {
-    if (!projectId) {
-      conversations.value = []
-      currentConversation.value = null
+  const sendMessage = async (content: string) => {
+    const trimmedContent = String(content || '').trim()
+    if (!trimmedContent) return
+
+    if (!providerConfigured.value) {
+      lastProviderError.value = t('errorConfigureProviderBeforeSend')
+      openSettings()
       return
     }
 
-    if (conversationId && !loading && !refreshing) {
-      await loadConversation(conversationId)
+    let conversationForRequest: Conversation
+
+    try {
+      conversationForRequest = await ensureConversationForSend()
+    } catch (error) {
+      console.error('Failed to create conversation', error)
+      return
+    }
+
+    const conversationIdForRequest = conversationForRequest.id
+    const activeProjectId = conversationForRequest.project_id
+    const currentRunState = conversationRunStates.value[conversationIdForRequest]
+
+    if (currentRunState?.status === 'running') {
+      lastProviderError.value = t('errorConversationAlreadyRunning')
+      return
+    }
+
+    lastProviderError.value = ''
+
+    const requestId = createRequestId()
+    const assistantMessage = {
+      ...createAssistantMessage(runtimeConfig.value.council_models),
+      id: requestId,
+    }
+    const userMessage = createUserMessage(trimmedContent)
+    const optimisticCreatedAt = conversationForRequest.created_at || new Date().toISOString()
+    const optimisticTitle = String(conversationForRequest.title || t('conversationUntitled')).trim()
+    const existingMessageCount = Array.isArray(conversationForRequest.messages)
+      ? conversationForRequest.messages.length
+      : conversationCache.value[conversationIdForRequest]?.messages.length || 0
+
+    updateConversationById(conversationIdForRequest, (conversation) => {
+      const nextConversation =
+        conversation ||
+        createConversationSnapshot({
+          id: conversationIdForRequest,
+          projectId: activeProjectId,
+          createdAt: optimisticCreatedAt,
+          title: optimisticTitle || t('conversationUntitled'),
+        })
+
+      return {
+        ...nextConversation,
+        title:
+          String(nextConversation.title || optimisticTitle || t('conversationUntitled')).trim() ||
+          t('conversationUntitled'),
+        messages: [...nextConversation.messages, userMessage, assistantMessage],
+      }
+    })
+
+    upsertConversationInSidebar({
+      id: conversationIdForRequest,
+      project_id: activeProjectId,
+      created_at: optimisticCreatedAt,
+      title: optimisticTitle || t('conversationUntitled'),
+      message_count: existingMessageCount + 2,
+    })
+
+    const startedAt = new Date().toISOString()
+    conversationRunStates.value[conversationIdForRequest] = {
+      requestId,
+      status: 'running',
+      stage: 'stage1',
+      startedAt,
+      completedAt: null,
+      lastActivityAt: startedAt,
+      lastError: '',
+      hasUnreadUpdate: false,
+    }
+
+    void runConversationTask({
+      conversationId: conversationIdForRequest,
+      projectId: activeProjectId,
+      requestId,
+      assistantMessageId: assistantMessage.id,
+      content: trimmedContent,
+    })
+  }
+
+  watch(currentConversationId, async (conversationId) => {
+    if (!conversationId) return
+    clearConversationUnread(conversationId)
+    if (!conversationCache.value[conversationId] || conversationRunStates.value[conversationId]?.status !== 'running') {
+      await loadConversation(conversationId, { force: true })
     }
   })
 
@@ -814,13 +1116,16 @@ export function useMdtApp() {
 
   return {
     conversations,
+    conversationRunStates,
     currentConversation,
     currentConversationId,
+    currentConversationRunState,
+    currentConversationRunning,
     currentProject,
     currentProjectId,
     draftMessage,
     groupedConversations,
-    isLoading,
+    isLoading: hasRunningConversations,
     isSettingsOpen,
     isSidebarCollapsed,
     lastProviderError,

@@ -217,7 +217,7 @@ const isAssistantStreaming = (message: AssistantMessage) =>
         >
           <div class="text-lg font-semibold text-foreground">{{ t('startConversation') }}</div>
           <p class="mt-2 text-sm leading-6 text-muted-foreground">
-            {{ t('conversationStartsFromMain') }}
+            {{ t('askCouncilQuestion') }}
           </p>
         </div>
 
@@ -341,6 +341,19 @@ const isAssistantStreaming = (message: AssistantMessage) =>
         </div>
 
         <div ref="messagesEnd" />
+      </div>
+    </div>
+
+    <div v-if="conversation" class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6">
+      <div class="mx-auto w-full max-w-6xl">
+        <ChatComposer
+          v-model="draftValue"
+          :disabled="isLoading"
+          :is-loading="isLoading"
+          :provider-configured="providerConfigured"
+          @open-settings="emit('open-settings')"
+          @send="handleSend"
+        />
       </div>
     </div>
   </section>

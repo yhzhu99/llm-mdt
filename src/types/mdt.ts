@@ -2,6 +2,8 @@ export type MessageRole = 'user' | 'assistant'
 export type StreamDeltaType = 'content' | 'reasoning'
 export type StreamStatus = 'idle' | 'running' | 'complete' | 'error'
 export type AppLocale = 'zh-CN' | 'en'
+export type ConversationRunStage = 'stage1' | 'stage2' | 'stage3' | null
+export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error'
 
 export interface ProviderSettings {
   baseUrl: string
@@ -159,6 +161,17 @@ export interface Conversation {
   created_at: string
   title: string
   messages: ConversationMessage[]
+}
+
+export interface ConversationRunState {
+  requestId: string | null
+  status: ConversationRunStatus
+  stage: ConversationRunStage
+  startedAt: string | null
+  completedAt?: string | null
+  lastActivityAt?: string | null
+  lastError?: string
+  hasUnreadUpdate: boolean
 }
 
 export interface AssistantMessageRecord {
