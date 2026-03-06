@@ -13,6 +13,7 @@ import {
 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
+import type { ConversationRunStage, ConversationRunState } from '@/types'
 import { cn } from '@/utils'
 
 interface ConversationSummary {
@@ -35,6 +36,7 @@ const props = withDefaults(
   defineProps<{
     projects: ProjectSummary[]
     conversations: ConversationSummary[]
+    conversationRunStates?: Record<string, ConversationRunState>
     groupedConversations?: Record<string, ConversationSummary[]>
     currentConversationId?: string | null
     currentProjectId?: string | null
@@ -42,6 +44,7 @@ const props = withDefaults(
     isCollapsed?: boolean
   }>(),
   {
+    conversationRunStates: () => ({}),
     groupedConversations: () => ({}),
     currentConversationId: null,
     currentProjectId: null,
@@ -96,6 +99,34 @@ const displayProjectName = (project: ProjectSummary) => {
 const displayConversationTitle = (conversation: ConversationSummary) => {
   const trimmed = String(conversation.title || '').trim()
   return placeholderConversationTitles.has(trimmed) ? t('conversationUntitled') : trimmed
+}
+
+const conversationRunState = (conversationId: string) => props.conversationRunStates?.[conversationId] || null
+
+const stageLabel = (stage: ConversationRunStage) => {
+  if (stage === 'stage1') return t('stage1Title')
+  if (stage === 'stage2') return t('stage2Title')
+  if (stage === 'stage3') return t('stage3Title')
+  return ''
+}
+
+const conversationStatusLabel = (conversationId: string) => {
+  const state = conversationRunState(conversationId)
+  if (!state || state.status === 'idle') return ''
+  if (state.status === 'running') {
+    const currentStage = stageLabel(state.stage)
+    return currentStage ? `${currentStage} · ${t('stageStatusLive')}` : t('stageStatusLive')
+  }
+  if (state.status === 'error') return t('stageStatusError')
+  return t('stageStatusComplete')
+}
+
+const conversationStatusClass = (conversationId: string) => {
+  const state = conversationRunState(conversationId)
+  if (!state || state.status === 'idle') return ''
+  if (state.status === 'running') return 'border-primary/20 bg-primary/10 text-primary'
+  if (state.status === 'error') return 'border-destructive/20 bg-destructive/10 text-destructive'
+  return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
 }
 
 const startProjectRename = (project: ProjectSummary) => {
@@ -370,11 +401,30 @@ const submitProjectCreate = () => {
                         @keydown.esc.prevent="renamingConversationId = null"
                       />
                       <template v-else>
-                        <div class="truncate text-sm font-medium text-foreground">
-                          {{ displayConversationTitle(conversation) }}
+                        <div class="flex items-center gap-2">
+                          <div class="truncate text-sm font-medium text-foreground">
+                            {{ displayConversationTitle(conversation) }}
+                          </div>
+                          <span
+                            v-if="conversationRunState(conversation.id)?.hasUnreadUpdate"
+                            class="h-2 w-2 shrink-0 rounded-full bg-primary"
+                          />
                         </div>
-                        <div class="truncate text-xs text-muted-foreground">
-                          {{ t('sidebarMessageCount', { count: conversation.message_count || 0 }) }}
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span
+                            v-if="conversationStatusLabel(conversation.id)"
+                            :class="
+                              cn(
+                                'inline-flex items-center rounded-full border px-2 py-0.5 font-medium',
+                                conversationStatusClass(conversation.id),
+                              )
+                            "
+                          >
+                            {{ conversationStatusLabel(conversation.id) }}
+                          </span>
+                          <span class="truncate">
+                            {{ t('sidebarMessageCount', { count: conversation.message_count || 0 }) }}
+                          </span>
                         </div>
                       </template>
                     </div>

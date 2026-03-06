@@ -8,12 +8,13 @@ import { useMdtApp } from '@/composables/useMdtApp'
 
 const {
   conversations,
+  conversationRunStates,
   currentConversation,
   currentConversationId,
+  currentConversationRunning,
   currentProjectId,
   draftMessage,
   groupedConversations,
-  isLoading,
   isSettingsOpen,
   isSidebarCollapsed,
   projects,
@@ -54,6 +55,7 @@ const topBarTitle = computed(() => {
     <Sidebar
       :projects="projects"
       :conversations="conversations"
+      :conversation-run-states="conversationRunStates"
       :grouped-conversations="groupedConversations"
       :current-conversation-id="currentConversationId"
       :current-project-id="currentProjectId"
@@ -83,7 +85,7 @@ const topBarTitle = computed(() => {
       <ChatSurface
         v-model:draft="draftMessage"
         :conversation="currentConversation"
-        :is-loading="isLoading"
+        :is-loading="currentConversationRunning"
         :provider-configured="providerConfigured"
         :runtime-config="runtimeConfig"
         @open-settings="openSettings"
