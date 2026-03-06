@@ -10,6 +10,7 @@ interface ProviderSettingsLike {
   councilModels?: string[] | string
   chairmanModel?: string
   titleModel?: string
+  requestMode?: 'auto' | 'responses' | 'chat-completions'
 }
 
 const props = defineProps<{
@@ -38,6 +39,7 @@ const formState = ref({
   councilModelsText: '',
   chairmanModel: '',
   titleModel: '',
+  requestMode: 'auto' as 'auto' | 'responses' | 'chat-completions',
 })
 
 watch(
@@ -50,6 +52,7 @@ watch(
       councilModelsText: formatModelList(settings?.councilModels),
       chairmanModel: settings?.chairmanModel || '',
       titleModel: settings?.titleModel || settings?.chairmanModel || '',
+      requestMode: settings?.requestMode || 'auto',
     }
   },
   { immediate: true, deep: true },
@@ -70,6 +73,7 @@ const handleSubmit = () => {
     councilModels: formState.value.councilModelsText,
     chairmanModel: formState.value.chairmanModel,
     titleModel: formState.value.titleModel,
+    requestMode: formState.value.requestMode,
   })
 }
 
@@ -252,6 +256,18 @@ onBeforeUnmount(() => {
                 />
               </label>
             </div>
+
+            <label class="block space-y-2">
+              <span class="text-sm font-medium text-foreground">{{ t('settingsRequestMode') }}</span>
+              <select
+                v-model="formState.requestMode"
+                class="w-full rounded-xl border border-input bg-background px-4 py-3 text-sm text-foreground outline-none ring-offset-background transition-shadow focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <option value="auto">{{ t('settingsRequestModeAuto') }}</option>
+                <option value="responses">{{ t('settingsRequestModeResponses') }}</option>
+                <option value="chat-completions">{{ t('settingsRequestModeChatCompletions') }}</option>
+              </select>
+            </label>
 
             <div
               v-if="error"

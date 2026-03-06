@@ -11,6 +11,20 @@ interface StageThreeResult {
   model: string
   response: string
   reasoning_details?: string | null
+  diagnostics?: {
+    configured_mode: 'auto' | 'responses' | 'chat-completions'
+    selected_mode: 'responses' | 'chat-completions' | null
+    endpoint: string
+    fallback_used: boolean
+    attempts: Array<{ mode: 'responses' | 'chat-completions'; endpoint: string; status: 'succeeded' | 'failed'; error?: string }>
+    stream_event_types: string[]
+    reasoning_event_count: number
+    content_event_count: number
+    reasoning_text_chars: number
+    content_text_chars: number
+    saw_reasoning: boolean
+    reasoning_details_present: boolean
+  } | null
 }
 
 interface StageThreeStreamState {
@@ -34,6 +48,17 @@ const { t } = useI18n()
 const showThinking = ref(false)
 const responseText = computed(() => props.finalResponse?.response || props.streamState?.response || '')
 const thinkingText = computed(() => props.finalResponse?.reasoning_details || props.streamState?.thinking || '')
+const reasoningNotice = computed(() => {
+  if (!responseText.value || thinkingText.value || props.streamMeta?.status === 'error') return ''
+
+  if (props.finalResponse?.diagnostics?.fallback_used && props.finalResponse.diagnostics.selected_mode) {
+    return t('stageNoThinkingFallback', {
+      mode: props.finalResponse.diagnostics.selected_mode,
+    })
+  }
+
+  return t('stageNoThinkingProvider')
+})
 const modelName = computed(() => props.finalResponse?.model || 'chairman')
 const hasStartedMainOutput = computed(() => Boolean(responseText.value))
 const shortModelName = computed(() => modelName.value.split('/')[1] || modelName.value)
@@ -143,6 +168,13 @@ const stageStatusBadgeClass = computed(() =>
         </div>
       </div>
 
+      <div
+        v-if="reasoningNotice"
+        class="rounded-[1.1rem] border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-sm text-amber-700"
+      >
+        {{ reasoningNotice }} {{ t('stageTraceHint') }}
+      </div>
+
       <div v-if="showThinking" class="rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-4">
         <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
           {{ t('stageThinking') }}
@@ -152,7 +184,10 @@ const stageStatusBadgeClass = computed(() =>
           :source="thinkingText"
           :class="cn(props.streamMeta?.status === 'running' && 'streaming-prose', 'prose-p:my-2 prose-headings:mt-4')"
         />
-        <div v-else class="text-sm text-muted-foreground">{{ t('stageNoThinking') }}</div>
+        <div v-else class="space-y-1 text-sm text-muted-foreground">
+          <div>{{ reasoningNotice || t('stageNoThinking') }}</div>
+          <div v-if="props.finalResponse?.diagnostics">{{ t('stageTraceHint') }}</div>
+        </div>
       </div>
     </div>
   </StageCard>

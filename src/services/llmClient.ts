@@ -1,16 +1,32 @@
 import type {
   ChatCompletionClient,
+  ChatCompletionDiagnostics,
   ChatCompletionOptions,
   ChatCompletionResult,
   ChatCompletionStreamEvent,
+  ProviderRequestMode,
   ProviderSettings,
+  RequestAttemptDiagnostic,
+  RequestMode,
 } from '@/types'
-
-type RequestMode = 'responses' | 'chat-completions'
 
 interface RequestConfig {
   endpoint: string
   mode: RequestMode
+}
+
+interface StreamDiagnosticsAccumulator {
+  eventTypes: Set<string>
+  reasoningEventCount: number
+  contentEventCount: number
+  reasoningTextChars: number
+  contentTextChars: number
+}
+
+interface StreamDiagnosticsContext {
+  configuredMode: ProviderRequestMode
+  previousAttempts: RequestAttemptDiagnostic[]
+  fallbackUsed: boolean
 }
 
 class RequestError extends Error {
@@ -81,6 +97,18 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
   const record = value as Record<string, unknown>
   const type = typeof record.type === 'string' ? record.type : ''
 
+  if (preferredType === 'summary_text') {
+    const summaryText = normalizeStructuredText(record.summary_text ?? record.summaryText)
+    if (summaryText) return [summaryText]
+  }
+
+  if (preferredType === 'reasoning_text') {
+    const reasoningText = normalizeStructuredText(
+      record.reasoning_text ?? record.reasoningText ?? record.reasoning_content ?? record.reasoningContent,
+    )
+    if (reasoningText) return [reasoningText]
+  }
+
   if (preferredType && type && type !== preferredType) {
     if (preferredType === 'summary_text' && record.summary != null) {
       return normalizeTextParts(record.summary, preferredType)
@@ -99,8 +127,9 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
 
   const nestedContent = record.content != null ? normalizeTextParts(record.content, preferredType) : []
   const nestedSummary = record.summary != null ? normalizeTextParts(record.summary, preferredType) : []
+  const nestedParts = record.parts != null ? normalizeTextParts(record.parts, preferredType) : []
 
-  return [...nestedSummary, ...nestedContent]
+  return [...nestedSummary, ...nestedContent, ...nestedParts]
 }
 
 function extractSummaryText(value: unknown) {
@@ -198,11 +227,10 @@ function resolveEndpoint(baseUrl: string, mode: RequestMode) {
   return `${trimmed}/chat/completions`
 }
 
-function createRequestConfigs(baseUrl: string): RequestConfig[] {
-  const candidates: RequestConfig[] = [
-    { mode: 'responses', endpoint: resolveEndpoint(baseUrl, 'responses') },
-    { mode: 'chat-completions', endpoint: resolveEndpoint(baseUrl, 'chat-completions') },
-  ]
+function createRequestConfigs(baseUrl: string, preferredMode: ProviderRequestMode = 'auto'): RequestConfig[] {
+  const orderedModes: RequestMode[] =
+    preferredMode === 'auto' ? ['responses', 'chat-completions'] : [preferredMode]
+  const candidates = orderedModes.map((mode) => ({ mode, endpoint: resolveEndpoint(baseUrl, mode) }))
 
   const seen = new Set<string>()
   return candidates.filter((candidate) => {
@@ -278,12 +306,26 @@ function extractUnifiedReasoningText(source: Record<string, unknown>) {
   const reasoningObject =
     source.reasoning && typeof source.reasoning === 'object' ? (source.reasoning as Record<string, unknown>) : null
 
-  const summary = extractSummaryText(source.reasoning_summary ?? reasoningObject?.summary)
+  const summary = extractSummaryText(
+    source.reasoning_summary ??
+      source.reasoning_summary_text ??
+      source.reasoningSummary ??
+      reasoningObject?.summary ??
+      reasoningObject?.summary_text ??
+      reasoningObject?.summaryText,
+  )
   const details = extractDetailedReasoningText(
     source.reasoning_details ??
+      source.reasoningDetails ??
       source.thinking ??
       source.reasoning_content ??
-      (typeof source.reasoning === 'string' ? source.reasoning : reasoningObject?.content),
+      source.reasoningContent ??
+      source.reasoning_text ??
+      source.reasoningText ??
+      source.reasoning_message ??
+      (typeof source.reasoning === 'string'
+        ? source.reasoning
+        : reasoningObject?.content ?? reasoningObject?.details ?? reasoningObject?.text ?? reasoningObject?.reasoning_text),
   )
 
   return mergeReasoningText(summary, details)
@@ -316,8 +358,15 @@ function extractResponseOutputText(item: Record<string, unknown>) {
   return ''
 }
 
+function isReasoningOutputItem(item: Record<string, unknown>) {
+  const type = typeof item.type === 'string' ? item.type : ''
+  return type === 'reasoning' || type.startsWith('reasoning')
+}
+
 function buildResponsesStreamKey(payload: Record<string, unknown>, kind: 'content' | 'reasoning') {
-  const itemId = normalizeStructuredText(payload.item_id) || normalizeStructuredText(payload.id) || 'item'
+  const item = payload.item && typeof payload.item === 'object' ? (payload.item as Record<string, unknown>) : null
+  const itemId =
+    normalizeStructuredText(payload.item_id) || normalizeStructuredText(payload.id) || normalizeStructuredText(item?.id) || 'item'
   const outputIndex = normalizeStructuredText(payload.output_index) || '0'
   const contentIndex =
     kind === 'content'
@@ -342,14 +391,74 @@ function parseResponsesResult(data: Record<string, unknown>): ChatCompletionResu
     normalizeStructuredText(data.output_text) ||
     output.map((item) => extractResponseOutputText(item)).filter(Boolean).join('')
 
-  const reasoningItems = output.filter((item) => item.type === 'reasoning')
+  const reasoningItems = output.filter((item) => isReasoningOutputItem(item))
   const summary = joinText(reasoningItems.map((item) => extractSummaryText(item.summary)))
   const details = joinText(reasoningItems.map((item) => extractDetailedReasoningText(item.content)))
+  const itemReasoning = mergeReasoningText(summary, details)
 
   return {
     content,
-    reasoning_details: mergeReasoningText(summary, details) || null,
+    reasoning_details: itemReasoning || extractUnifiedReasoningText(data) || null,
   }
+}
+
+function createStreamDiagnosticsAccumulator(): StreamDiagnosticsAccumulator {
+  return {
+    eventTypes: new Set<string>(),
+    reasoningEventCount: 0,
+    contentEventCount: 0,
+    reasoningTextChars: 0,
+    contentTextChars: 0,
+  }
+}
+
+function buildDiagnostics(
+  requestConfig: RequestConfig,
+  context: StreamDiagnosticsContext,
+  state: StreamDiagnosticsAccumulator,
+  reasoningDetails: string | null,
+  currentStatus: RequestAttemptDiagnostic['status'],
+  currentError = '',
+): ChatCompletionDiagnostics {
+  const currentAttempt: RequestAttemptDiagnostic = {
+    mode: requestConfig.mode,
+    endpoint: requestConfig.endpoint,
+    status: currentStatus,
+    ...(currentError ? { error: currentError } : {}),
+  }
+
+  return {
+    configured_mode: context.configuredMode,
+    selected_mode: requestConfig.mode,
+    endpoint: requestConfig.endpoint,
+    fallback_used: context.fallbackUsed,
+    attempts: [...context.previousAttempts, currentAttempt],
+    stream_event_types: [...state.eventTypes],
+    reasoning_event_count: state.reasoningEventCount,
+    content_event_count: state.contentEventCount,
+    reasoning_text_chars: state.reasoningTextChars,
+    content_text_chars: state.contentTextChars,
+    saw_reasoning: state.reasoningEventCount > 0 || state.reasoningTextChars > 0,
+    reasoning_details_present: Boolean(String(reasoningDetails || '').trim()),
+  }
+}
+
+function extractEventText(payload: Record<string, unknown>) {
+  const part = payload.part && typeof payload.part === 'object' ? (payload.part as Record<string, unknown>) : null
+
+  return normalizeStructuredText(
+    payload.delta ??
+      payload.text ??
+      payload.reasoning ??
+      payload.reasoning_text ??
+      payload.reasoning_summary ??
+      payload.summary_text ??
+      part?.delta ??
+      part?.text ??
+      part?.summary_text ??
+      part?.summary ??
+      part?.content,
+  )
 }
 
 async function doFetch(url: string, settings: ProviderSettings, payload: Record<string, unknown>, timeoutMs: number) {
@@ -409,8 +518,9 @@ export async function chatCompletion(
   settings: ProviderSettings,
   { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
 ) {
-  const requestConfigs = createRequestConfigs(settings.baseUrl)
+  const requestConfigs = createRequestConfigs(settings.baseUrl, settings.requestMode)
   let lastError: unknown = null
+  const attempts: RequestAttemptDiagnostic[] = []
 
   for (const [index, requestConfig] of requestConfigs.entries()) {
     try {
@@ -421,9 +531,37 @@ export async function chatCompletion(
         timeoutMs,
       )
       const data = (await response.json()) as Record<string, unknown>
-      return parseJsonResult(requestConfig, data)
+      const parsed = parseJsonResult(requestConfig, data)
+      const successAttempt: RequestAttemptDiagnostic = {
+        mode: requestConfig.mode,
+        endpoint: requestConfig.endpoint,
+        status: 'succeeded',
+      }
+      return {
+        ...parsed,
+        diagnostics: {
+          configured_mode: settings.requestMode || 'auto',
+          selected_mode: requestConfig.mode,
+          endpoint: requestConfig.endpoint,
+          fallback_used: index > 0,
+          attempts: [...attempts, successAttempt],
+          stream_event_types: [],
+          reasoning_event_count: parsed.reasoning_details ? 1 : 0,
+          content_event_count: parsed.content ? 1 : 0,
+          reasoning_text_chars: parsed.reasoning_details?.length || 0,
+          content_text_chars: parsed.content.length,
+          saw_reasoning: Boolean(parsed.reasoning_details),
+          reasoning_details_present: Boolean(parsed.reasoning_details),
+        },
+      }
     } catch (error) {
       lastError = error
+      attempts.push({
+        mode: requestConfig.mode,
+        endpoint: requestConfig.endpoint,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
       if (shouldFallbackToNextAttempt(error, index < requestConfigs.length - 1)) {
         continue
       }
@@ -443,6 +581,7 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
       text: normalizeStructuredText(payload.delta),
       stream_key: buildResponsesStreamKey(payload, 'content'),
       is_done: false,
+      raw_type: type,
     }
   }
 
@@ -452,18 +591,20 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
       text: normalizeStructuredText(payload.text),
       stream_key: buildResponsesStreamKey(payload, 'content'),
       is_done: true,
+      raw_type: type,
     }
   }
 
   if (
     type === 'response.reasoning_summary_part.added' ||
-    (type.startsWith('response.reasoning') && type.endsWith('.delta'))
+    (type.startsWith('response.reasoning') && (type.endsWith('.delta') || type.endsWith('.added')))
   ) {
     return {
       delta_type: 'reasoning' as const,
-      text: normalizeStructuredText(payload.delta ?? (payload.part as Record<string, unknown> | undefined)?.text),
+      text: extractEventText(payload),
       stream_key: buildResponsesStreamKey(payload, 'reasoning'),
       is_done: false,
+      raw_type: type,
     }
   }
 
@@ -473,19 +614,34 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
   ) {
     return {
       delta_type: 'reasoning' as const,
-      text: normalizeStructuredText(payload.text ?? (payload.part as Record<string, unknown> | undefined)?.text),
+      text: extractEventText(payload),
       stream_key: buildResponsesStreamKey(payload, 'reasoning'),
       is_done: true,
+      raw_type: type,
+    }
+  }
+
+  if ((type === 'response.output_item.added' || type === 'response.output_item.done') && payload.item && typeof payload.item === 'object') {
+    const item = payload.item as Record<string, unknown>
+    if (isReasoningOutputItem(item)) {
+      return {
+        delta_type: 'reasoning' as const,
+        text: extractUnifiedReasoningText(item),
+        stream_key: buildResponsesStreamKey({ ...payload, item_id: item.id ?? payload.item_id }, 'reasoning'),
+        is_done: type === 'response.output_item.done',
+        raw_type: type,
+      }
     }
   }
 
   if (type === 'response.output_item.done' && payload.item && typeof payload.item === 'object') {
     const item = payload.item as Record<string, unknown>
-    if (item.type === 'reasoning') {
+    if (isReasoningOutputItem(item)) {
       return {
         delta_type: 'final' as const,
         content: '',
         reasoning_details: extractUnifiedReasoningText(item) || null,
+        raw_type: type,
       }
     }
   }
@@ -496,6 +652,7 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
       delta_type: 'final' as const,
       content: parsed.content,
       reasoning_details: parsed.reasoning_details,
+      raw_type: type,
     }
   }
 
@@ -505,7 +662,7 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
       (error && typeof error === 'object' ? normalizeStructuredText((error as Record<string, unknown>).message) : '') ||
       normalizeStructuredText(payload.message) ||
       'Unknown error'
-    return { delta_type: 'error' as const, message }
+    return { delta_type: 'error' as const, message, raw_type: type }
   }
 
   return null
@@ -514,12 +671,14 @@ function extractResponsesEventDelta(payload: Record<string, unknown>) {
 async function* streamFromResponse(
   requestConfig: RequestConfig,
   response: Response,
+  context: StreamDiagnosticsContext,
 ): AsyncGenerator<ChatCompletionStreamEvent> {
   let contentAcc = ''
   let reasoningAcc = ''
   let reasoningDetails: string | null = null
   const contentBuffers = new Map<string, string>()
   const reasoningBuffers = new Map<string, string>()
+  const diagnostics = createStreamDiagnosticsAccumulator()
 
   const contentType = response.headers.get('content-type') || ''
   if (contentType.includes('application/json')) {
@@ -529,6 +688,13 @@ async function* streamFromResponse(
       delta_type: 'final',
       content: parsed.content,
       reasoning_details: parsed.reasoning_details,
+      diagnostics: buildDiagnostics(
+        requestConfig,
+        context,
+        diagnostics,
+        parsed.reasoning_details,
+        'succeeded',
+      ),
     }
     return
   }
@@ -565,6 +731,8 @@ async function* streamFromResponse(
         }
 
         if (requestConfig.mode === 'responses') {
+          const payloadType = typeof payload.type === 'string' ? payload.type : ''
+          if (payloadType) diagnostics.eventTypes.add(payloadType)
           const parsedEvent = extractResponsesEventDelta(payload)
           if (!parsedEvent) continue
 
@@ -585,6 +753,8 @@ async function* streamFromResponse(
 
             if (nextText) {
               contentAcc += nextText
+              diagnostics.contentEventCount += 1
+              diagnostics.contentTextChars += nextText.length
               yield { delta_type: 'content', text: nextText }
             }
           } else if (parsedEvent.delta_type === 'reasoning') {
@@ -604,6 +774,8 @@ async function* streamFromResponse(
 
             if (nextText) {
               reasoningAcc += nextText
+              diagnostics.reasoningEventCount += 1
+              diagnostics.reasoningTextChars += nextText.length
               yield { delta_type: 'reasoning', text: nextText }
             }
           } else if (parsedEvent.delta_type === 'final') {
@@ -612,13 +784,24 @@ async function* streamFromResponse(
               contentAcc = parsedEvent.content
             }
           } else if (parsedEvent.delta_type === 'error') {
-            yield parsedEvent
+            yield {
+              ...parsedEvent,
+              diagnostics: buildDiagnostics(
+                requestConfig,
+                context,
+                diagnostics,
+                reasoningDetails || reasoningAcc || null,
+                'failed',
+                parsedEvent.message,
+              ),
+            }
             return
           }
 
           continue
         }
 
+        diagnostics.eventTypes.add('chat.completions.chunk')
         const choice = (payload.choices as Array<Record<string, unknown>> | undefined)?.[0]
         if (!choice) continue
 
@@ -628,12 +811,16 @@ async function* streamFromResponse(
         const contentDelta = normalizeStructuredText(delta.content)
         if (contentDelta) {
           contentAcc += contentDelta
+          diagnostics.contentEventCount += 1
+          diagnostics.contentTextChars += contentDelta.length
           yield { delta_type: 'content', text: contentDelta }
         }
 
         const reasoningDelta = extractReasoningDelta(delta)
         if (reasoningDelta) {
           reasoningAcc += reasoningDelta
+          diagnostics.reasoningEventCount += 1
+          diagnostics.reasoningTextChars += reasoningDelta.length
           yield { delta_type: 'reasoning', text: reasoningDelta }
         }
 
@@ -656,6 +843,13 @@ async function* streamFromResponse(
     delta_type: 'final',
     content: contentAcc,
     reasoning_details: reasoningDetails || reasoningAcc || null,
+    diagnostics: buildDiagnostics(
+      requestConfig,
+      context,
+      diagnostics,
+      reasoningDetails || reasoningAcc || null,
+      'succeeded',
+    ),
   }
 }
 
@@ -663,8 +857,9 @@ export async function* chatCompletionStream(
   settings: ProviderSettings,
   { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
 ): AsyncGenerator<ChatCompletionStreamEvent> {
-  const requestConfigs = createRequestConfigs(settings.baseUrl)
+  const requestConfigs = createRequestConfigs(settings.baseUrl, settings.requestMode)
   let lastError: unknown = null
+  const attempts: RequestAttemptDiagnostic[] = []
 
   for (const [index, requestConfig] of requestConfigs.entries()) {
     try {
@@ -675,12 +870,22 @@ export async function* chatCompletionStream(
         timeoutMs,
       )
 
-      for await (const event of streamFromResponse(requestConfig, response)) {
+      for await (const event of streamFromResponse(requestConfig, response, {
+        configuredMode: settings.requestMode || 'auto',
+        previousAttempts: attempts,
+        fallbackUsed: index > 0,
+      })) {
         yield event
       }
       return
     } catch (error) {
       lastError = error
+      attempts.push({
+        mode: requestConfig.mode,
+        endpoint: requestConfig.endpoint,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
       if (shouldFallbackToNextAttempt(error, index < requestConfigs.length - 1)) {
         continue
       }
@@ -688,6 +893,20 @@ export async function* chatCompletionStream(
       yield {
         delta_type: 'error',
         message: error instanceof Error ? error.message : String(error),
+        diagnostics: {
+          configured_mode: settings.requestMode || 'auto',
+          selected_mode: requestConfig.mode,
+          endpoint: requestConfig.endpoint,
+          fallback_used: index > 0,
+          attempts,
+          stream_event_types: [],
+          reasoning_event_count: 0,
+          content_event_count: 0,
+          reasoning_text_chars: 0,
+          content_text_chars: 0,
+          saw_reasoning: false,
+          reasoning_details_present: false,
+        },
       }
       return
     }
@@ -696,6 +915,20 @@ export async function* chatCompletionStream(
   yield {
     delta_type: 'error',
     message: lastError instanceof Error ? lastError.message : String(lastError || 'Request failed'),
+    diagnostics: {
+      configured_mode: settings.requestMode || 'auto',
+      selected_mode: requestConfigs[requestConfigs.length - 1]?.mode || null,
+      endpoint: requestConfigs[requestConfigs.length - 1]?.endpoint || '',
+      fallback_used: requestConfigs.length > 1,
+      attempts,
+      stream_event_types: [],
+      reasoning_event_count: 0,
+      content_event_count: 0,
+      reasoning_text_chars: 0,
+      content_text_chars: 0,
+      saw_reasoning: false,
+      reasoning_details_present: false,
+    },
   }
 }
 

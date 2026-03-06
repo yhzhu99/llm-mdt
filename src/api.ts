@@ -25,6 +25,7 @@ function toRuntimeConfig(settings: Awaited<ReturnType<typeof settingsStore.get>>
     chairman_model: settings.chairmanModel || '',
     title_model: settings.titleModel || settings.chairmanModel || '',
     base_url: settings.baseUrl || '',
+    request_mode: settings.requestMode || 'auto',
   }
 }
 

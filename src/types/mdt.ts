@@ -4,6 +4,30 @@ export type StreamStatus = 'idle' | 'running' | 'complete' | 'error'
 export type AppLocale = 'zh-CN' | 'en'
 export type ConversationRunStage = 'stage1' | 'stage2' | 'stage3' | null
 export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error'
+export type RequestMode = 'responses' | 'chat-completions'
+export type ProviderRequestMode = 'auto' | RequestMode
+
+export interface RequestAttemptDiagnostic {
+  mode: RequestMode
+  endpoint: string
+  status: 'succeeded' | 'failed'
+  error?: string
+}
+
+export interface ChatCompletionDiagnostics {
+  configured_mode: ProviderRequestMode
+  selected_mode: RequestMode | null
+  endpoint: string
+  fallback_used: boolean
+  attempts: RequestAttemptDiagnostic[]
+  stream_event_types: string[]
+  reasoning_event_count: number
+  content_event_count: number
+  reasoning_text_chars: number
+  content_text_chars: number
+  saw_reasoning: boolean
+  reasoning_details_present: boolean
+}
 
 export interface ProviderSettings {
   baseUrl: string
@@ -11,6 +35,7 @@ export interface ProviderSettings {
   councilModels: string[]
   chairmanModel: string
   titleModel: string
+  requestMode: ProviderRequestMode
 }
 
 export interface ProviderSettingsInput {
@@ -19,6 +44,7 @@ export interface ProviderSettingsInput {
   councilModels?: string[] | string
   chairmanModel?: string
   titleModel?: string
+  requestMode?: ProviderRequestMode
 }
 
 export interface RuntimeConfig {
@@ -27,6 +53,7 @@ export interface RuntimeConfig {
   chairman_model: string
   title_model: string
   base_url: string
+  request_mode: ProviderRequestMode
 }
 
 export interface AppPreferences {
@@ -82,6 +109,7 @@ export interface Stage3Result {
   model: string
   response: string
   reasoning_details: string | null
+  diagnostics?: ChatCompletionDiagnostics | null
 }
 
 export interface AggregateRanking {
@@ -238,13 +266,19 @@ export interface ChatCompletionOptions {
 export interface ChatCompletionResult {
   content: string
   reasoning_details: string | null
+  diagnostics?: ChatCompletionDiagnostics | null
 }
 
 export type ChatCompletionStreamEvent =
   | { delta_type: 'content'; text: string }
   | { delta_type: 'reasoning'; text: string }
-  | { delta_type: 'final'; content: string; reasoning_details: string | null }
-  | { delta_type: 'error'; message: string }
+  | {
+      delta_type: 'final'
+      content: string
+      reasoning_details: string | null
+      diagnostics?: ChatCompletionDiagnostics | null
+    }
+  | { delta_type: 'error'; message: string; diagnostics?: ChatCompletionDiagnostics | null }
 
 export interface ChatCompletionClient {
   chatCompletion: (

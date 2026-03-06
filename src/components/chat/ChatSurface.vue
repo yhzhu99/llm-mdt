@@ -46,6 +46,20 @@ interface StageThreeResult {
   model: string
   response: string
   reasoning_details?: string | null
+  diagnostics?: {
+    configured_mode: 'auto' | 'responses' | 'chat-completions'
+    selected_mode: 'responses' | 'chat-completions' | null
+    endpoint: string
+    fallback_used: boolean
+    attempts: Array<{ mode: 'responses' | 'chat-completions'; endpoint: string; status: 'succeeded' | 'failed'; error?: string }>
+    stream_event_types: string[]
+    reasoning_event_count: number
+    content_event_count: number
+    reasoning_text_chars: number
+    content_text_chars: number
+    saw_reasoning: boolean
+    reasoning_details_present: boolean
+  } | null
 }
 
 interface AssistantMessage extends ConversationMessageBase {
@@ -82,6 +96,7 @@ interface ConversationDetail {
 
 interface RuntimeConfigLike {
   council_models?: string[]
+  chairman_model?: string
 }
 
 type StageKey = 'stage1' | 'stage2' | 'stage3'
@@ -184,6 +199,25 @@ const latestAssistantEntry = computed(() => {
 
 const handleSend = (value: string) => emit('send', value)
 const stageSectionId = (messageId: string | undefined, stage: StageKey) => `${messageId || 'assistant'}-${stage}`
+const tracePayloadForMessage = (message: AssistantMessage) => {
+  const payload: Record<string, unknown> = {}
+
+  if (message.metadata) {
+    payload.ranking = message.metadata
+  }
+
+  if (message.stage3?.diagnostics || message.stage3 || message.streamMeta?.stage3?.status === 'error') {
+    payload.stage3 = {
+      model: message.stage3?.model || props.runtimeConfig?.chairman_model || 'chairman',
+      reasoning_available: Boolean(message.stage3?.reasoning_details || message.stream?.stage3?.thinking),
+      diagnostics: message.stage3?.diagnostics || null,
+      stream_status: message.streamMeta?.stage3?.status || 'idle',
+      stream_error: message.streamMeta?.stage3?.message || '',
+    }
+  }
+
+  return Object.keys(payload).length > 0 ? payload : null
+}
 
 const stageTitle = (stage: StageKey) => {
   if (stage === 'stage1') return t('stage1Title')
@@ -630,7 +664,7 @@ watch(latestAssistantFingerprint, async () => {
                 />
               </section>
 
-              <TraceLog :metadata="(message as AssistantMessage).metadata" />
+              <TraceLog :metadata="tracePayloadForMessage(message as AssistantMessage)" />
             </div>
           </div>
         </div>

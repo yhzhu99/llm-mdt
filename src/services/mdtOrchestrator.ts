@@ -388,6 +388,7 @@ export async function runMdtConversationStream({
       let stage3Content = ''
       let stage3Reasoning: string | null = null
       let stage3ReasoningAcc = ''
+      let stage3Diagnostics = null
       let stage3Failed = false
 
       for await (const event of client.chatCompletionStream(settings, {
@@ -408,11 +409,13 @@ export async function runMdtConversationStream({
           emit({ type: 'stage3_delta', delta_type: 'reasoning', text: event.text || '' })
         } else if (event.delta_type === 'final') {
           stage3Reasoning = event.reasoning_details
+          stage3Diagnostics = event.diagnostics || null
           if (!stage3Content && event.content) {
             stage3Content = event.content
           }
         } else if (event.delta_type === 'error') {
           stage3Failed = true
+          stage3Diagnostics = event.diagnostics || null
           emit({ type: 'stage3_error', message: event.message || translate(locale, 'orchestratorUnknownError') })
           break
         }
@@ -426,6 +429,7 @@ export async function runMdtConversationStream({
             ? translate(locale, 'orchestratorFinalSynthesisFailed')
             : translate(locale, 'orchestratorFinalSynthesisMissing')),
         reasoning_details: stage3Reasoning || stage3ReasoningAcc || null,
+        diagnostics: stage3Diagnostics,
       }
       emit({ type: 'stage3_complete', data: stage3Result })
     } else {

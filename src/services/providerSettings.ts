@@ -1,6 +1,6 @@
 import { requestToPromise, withStore } from './browserDb'
 import { translate } from '@/i18n'
-import type { AppLocale, ProviderSettings, ProviderSettingsInput } from '@/types'
+import type { AppLocale, ProviderRequestMode, ProviderSettings, ProviderSettingsInput } from '@/types'
 
 const SETTINGS_KEY = 'provider'
 
@@ -15,6 +15,7 @@ export const DEFAULT_PROVIDER_SETTINGS: ProviderSettings = {
   councilModels: ['openai/gpt-5.4', 'google/gemini-3.1-pro-preview', 'deepseek/deepseek-reasoner'],
   chairmanModel: 'openai/gpt-5.4',
   titleModel: 'google/gemini-3.1-flash-lite-preview',
+  requestMode: 'auto',
 }
 
 function uniqueStrings(values: unknown[]) {
@@ -41,6 +42,10 @@ export function formatModelList(models: string[]) {
   return (models ?? []).join('\n')
 }
 
+export function normalizeRequestMode(value: unknown): ProviderRequestMode {
+  return value === 'responses' || value === 'chat-completions' ? value : 'auto'
+}
+
 export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): ProviderSettings {
   const baseUrl = normalizeBaseUrl(input?.baseUrl ?? DEFAULT_PROVIDER_SETTINGS.baseUrl)
   const apiKey = String(input?.apiKey ?? '').trim()
@@ -48,6 +53,7 @@ export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): 
   const chairmanModel =
     String(input?.chairmanModel ?? '').trim() || councilModels[0] || DEFAULT_PROVIDER_SETTINGS.chairmanModel
   const titleModel = String(input?.titleModel ?? '').trim() || chairmanModel || DEFAULT_PROVIDER_SETTINGS.titleModel
+  const requestMode = normalizeRequestMode(input?.requestMode ?? DEFAULT_PROVIDER_SETTINGS.requestMode)
 
   return {
     baseUrl,
@@ -55,6 +61,7 @@ export function sanitizeProviderSettings(input?: ProviderSettingsInput | null): 
     councilModels,
     chairmanModel,
     titleModel,
+    requestMode,
   }
 }
 
