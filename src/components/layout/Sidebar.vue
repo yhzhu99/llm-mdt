@@ -96,6 +96,7 @@ const conversationStatusLabel = (conversationId: string) => {
     return currentStage ? `${currentStage} · ${t('stageStatusLive')}` : t('stageStatusLive')
   }
   if (state.status === 'error') return t('stageStatusError')
+  if (state.status === 'stopped') return t('stageStatusStopped')
   return t('stageStatusComplete')
 }
 
@@ -104,6 +105,7 @@ const conversationStatusClass = (conversationId: string) => {
   if (!state || state.status === 'idle') return ''
   if (state.status === 'running') return 'border-primary/20 bg-primary/10 text-primary'
   if (state.status === 'error') return 'border-destructive/20 bg-destructive/10 text-destructive'
+  if (state.status === 'stopped') return 'border-amber-500/20 bg-amber-500/10 text-amber-700'
   return 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
 }
 
@@ -120,6 +122,7 @@ const conversationStatusDotClass = (conversationId: string) => {
   }
   if (state.status === 'running') return 'bg-primary animate-pulse'
   if (state.status === 'error') return 'bg-destructive'
+  if (state.status === 'stopped') return 'bg-amber-500'
   return 'bg-emerald-500'
 }
 

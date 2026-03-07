@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { Crown, LoaderCircle, MessageSquareText, Plus, Scale, Settings2, Sparkles } from 'lucide-vue-next'
+import { Crown, LoaderCircle, MessageSquareText, Pencil, Scale, Settings2, Sparkles, Square } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils'
 import Button from '@/components/ui/button/Button.vue'
@@ -101,6 +101,8 @@ interface RuntimeConfigLike {
 
 type StageKey = 'stage1' | 'stage2' | 'stage3'
 type StageStatus = 'waiting' | 'running' | 'complete' | 'error'
+type RunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stopped'
+type AssistantStatus = StageStatus | 'stopped'
 
 const props = withDefaults(
   defineProps<{
@@ -110,6 +112,7 @@ const props = withDefaults(
     isLoading?: boolean
     isRecovering?: boolean
     recoveryError?: string
+    runStatus?: RunStatus
     runtimeConfig?: RuntimeConfigLike | null
     providerConfigured?: boolean
   }>(),
@@ -120,6 +123,7 @@ const props = withDefaults(
     isLoading: false,
     isRecovering: false,
     recoveryError: '',
+    runStatus: 'idle',
     runtimeConfig: null,
     providerConfigured: false,
   },
@@ -130,11 +134,16 @@ const emit = defineEmits<{
   (event: 'send', value: string): void
   (event: 'new-conversation'): void
   (event: 'open-settings'): void
+  (event: 'rerun', value: string): void
   (event: 'retry-recovery'): void
+  (event: 'stop'): void
 }>()
 
 const { t } = useI18n()
 const scrollRootRef = ref<HTMLElement | null>(null)
+const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
+const isEditingLatestPrompt = ref(false)
+const editingPrompt = ref('')
 
 const draftValue = computed({
   get: () => props.draft,
@@ -197,7 +206,61 @@ const latestAssistantEntry = computed(() => {
   return null
 })
 
+const latestUserEntry = computed(() => {
+  const messages = props.conversation?.messages || []
+
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message?.role === 'user') {
+      return {
+        index,
+        message: message as UserMessage,
+      }
+    }
+  }
+
+  return null
+})
+
 const handleSend = (value: string) => emit('send', value)
+const autosizeEditTextarea = () => {
+  const textarea = editTextareaRef.value
+  if (!textarea) return
+  textarea.style.height = 'auto'
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 360)}px`
+}
+
+const startEditingLatestPrompt = async () => {
+  if (props.isLoading || !latestUserEntry.value) return
+  isEditingLatestPrompt.value = true
+  editingPrompt.value = latestUserEntry.value.message.content
+  await nextTick()
+  editTextareaRef.value?.focus()
+  editTextareaRef.value?.setSelectionRange(editingPrompt.value.length, editingPrompt.value.length)
+  autosizeEditTextarea()
+}
+
+const cancelEditingLatestPrompt = () => {
+  isEditingLatestPrompt.value = false
+  editingPrompt.value = ''
+}
+
+const handleRerun = () => {
+  const value = editingPrompt.value.trim()
+  if (!value || props.isLoading) return
+  emit('rerun', value)
+  cancelEditingLatestPrompt()
+}
+
+const handleEditKeydown = (event: KeyboardEvent) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault()
+    handleRerun()
+  }
+}
+
+const isLatestUserMessage = (index: number) => latestUserEntry.value?.index === index
+const isLatestAssistantMessage = (index: number) => latestAssistantEntry.value?.index === index
 const stageSectionId = (messageId: string | undefined, stage: StageKey) => `${messageId || 'assistant'}-${stage}`
 const tracePayloadForMessage = (message: AssistantMessage) => {
   const payload: Record<string, unknown> = {}
@@ -328,9 +391,10 @@ const assistantCurrentStage = (message: AssistantMessage, index: number): StageK
   return 'stage1'
 }
 
-const assistantOverallStatus = (message: AssistantMessage, index: number): StageStatus => {
+const assistantOverallStatus = (message: AssistantMessage, index: number): AssistantStatus => {
   const statuses = stageStatuses(message, index)
 
+  if (props.runStatus === 'stopped' && isLatestAssistantMessage(index)) return 'stopped'
   if (isAssistantStreaming(message, index)) return 'running'
   if (statuses.stage3 === 'complete') return 'complete'
   if (statuses.stage3 === 'error' || Object.values(statuses).every((status) => status === 'error')) return 'error'
@@ -345,15 +409,17 @@ const assistantStatusText = (message: AssistantMessage, index: number) => {
   if (status === 'running') return `${t('streaming')} · ${stageTitle(currentStage)}`
   if (status === 'complete') return `${t('stageStatusComplete')} · ${stageTitle('stage3')}`
   if (status === 'error') return `${t('stageStatusError')} · ${stageTitle(currentStage)}`
+  if (status === 'stopped') return `${t('stageStatusStopped')} · ${stageTitle(currentStage)}`
   return stageTitle(currentStage)
 }
 
-const assistantStatusBadgeClass = (status: StageStatus) =>
+const assistantStatusBadgeClass = (status: AssistantStatus) =>
   cn(
     'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium',
     status === 'running' && 'border-primary/20 bg-primary/10 text-primary',
     status === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700',
     status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
+    status === 'stopped' && 'border-amber-500/20 bg-amber-500/10 text-amber-700',
     status === 'waiting' && 'border-border/70 bg-background/70 text-muted-foreground',
   )
 
@@ -407,6 +473,33 @@ watch(latestAssistantFingerprint, async () => {
   await nextTick()
   scrollToBottom()
 })
+
+watch(isEditingLatestPrompt, async (editing) => {
+  if (!editing) return
+  await nextTick()
+  autosizeEditTextarea()
+})
+
+watch(editingPrompt, () => {
+  if (!isEditingLatestPrompt.value) return
+  nextTick(() => autosizeEditTextarea())
+})
+
+watch(
+  () => latestUserEntry.value?.message.id || latestUserEntry.value?.message.content || '',
+  () => {
+    if (!latestUserEntry.value) {
+      cancelEditingLatestPrompt()
+    }
+  },
+)
+
+watch(
+  () => props.conversation?.id || '',
+  () => {
+    cancelEditingLatestPrompt()
+  },
+)
 </script>
 
 <template>
@@ -519,10 +612,48 @@ watch(latestAssistantFingerprint, async () => {
                   <div class="text-sm font-semibold text-foreground">{{ t('messageYou') }}</div>
                   <div class="text-sm text-muted-foreground">{{ t('conversationQuestionLabel') }}</div>
                 </div>
-                <CopyButton icon-only :title="t('copyMessage')" :get-text="() => (message as UserMessage).content" />
+                <div class="flex items-center gap-1">
+                  <Button
+                    v-if="isLatestUserMessage(index)"
+                    size="sm"
+                    variant="ghost"
+                    class="rounded-full px-3"
+                    :disabled="isLoading"
+                    @click="isEditingLatestPrompt ? cancelEditingLatestPrompt() : startEditingLatestPrompt()"
+                  >
+                    <Pencil :size="14" />
+                    {{ isEditingLatestPrompt ? t('settingsCancel') : t('conversationEditPrompt') }}
+                  </Button>
+                  <CopyButton
+                    icon-only
+                    :title="t('copyMessage')"
+                    :get-text="() => (isLatestUserMessage(index) && isEditingLatestPrompt ? editingPrompt : (message as UserMessage).content)"
+                  />
+                </div>
               </div>
               <div class="px-5 py-5">
-                <MarkdownRenderer :source="(message as UserMessage).content" class="prose-p:my-3" />
+                <div v-if="isLatestUserMessage(index) && isEditingLatestPrompt" class="space-y-4">
+                  <textarea
+                    ref="editTextareaRef"
+                    v-model="editingPrompt"
+                    rows="4"
+                    :placeholder="t('composerPlaceholder')"
+                    class="min-h-[148px] w-full resize-none rounded-[1.4rem] border border-border/70 bg-background/80 px-4 py-3 text-[15px] leading-7 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/35"
+                    @input="autosizeEditTextarea"
+                    @keydown="handleEditKeydown"
+                  />
+                  <div class="flex justify-end gap-2">
+                    <Button
+                      size="sm"
+                      class="rounded-full px-4"
+                      :disabled="isLoading || !editingPrompt.trim()"
+                      @click="handleRerun"
+                    >
+                      {{ t('conversationRunAgain') }}
+                    </Button>
+                  </div>
+                </div>
+                <MarkdownRenderer v-else :source="(message as UserMessage).content" class="prose-p:my-3" />
               </div>
             </div>
 
@@ -543,6 +674,7 @@ watch(latestAssistantFingerprint, async () => {
                               assistantOverallStatus(message as AssistantMessage, index) === 'running' && 'animate-pulse bg-current',
                               assistantOverallStatus(message as AssistantMessage, index) === 'complete' && 'bg-current',
                               assistantOverallStatus(message as AssistantMessage, index) === 'error' && 'bg-current',
+                              assistantOverallStatus(message as AssistantMessage, index) === 'stopped' && 'bg-current',
                             )
                           "
                         />
@@ -555,7 +687,17 @@ watch(latestAssistantFingerprint, async () => {
                     </div>
                   </div>
 
-                  <div class="flex flex-wrap justify-end gap-2 lg:hidden">
+                  <div class="flex flex-wrap items-center justify-end gap-2">
+                    <Button
+                      v-if="isLatestAssistantMessage(index) && runStatus === 'running'"
+                      size="sm"
+                      variant="outline"
+                      class="rounded-full"
+                      @click="emit('stop')"
+                    >
+                      <Square :size="14" />
+                      {{ t('conversationStop') }}
+                    </Button>
                     <span
                       v-for="stage in ['stage1', 'stage2', 'stage3']"
                       :key="stage"
@@ -683,21 +825,6 @@ watch(latestAssistantFingerprint, async () => {
             :available-stages="stageAvailability(latestAssistantEntry.message, latestAssistantEntry.index)"
           />
         </aside>
-      </div>
-    </div>
-
-    <div
-      v-if="hasConversationMessages"
-      class="border-t border-border/70 bg-background/80 px-5 py-4 backdrop-blur sm:px-6"
-    >
-      <div class="mx-auto flex w-full max-w-[92rem] flex-col gap-3 rounded-[1.5rem] border border-border/80 bg-card/90 px-5 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between">
-        <div class="min-w-0">
-          <div class="text-sm font-semibold text-foreground">{{ t('conversationSingleMessageHint') }}</div>
-        </div>
-        <Button size="sm" class="shrink-0" @click="emit('new-conversation')">
-          <Plus :size="16" />
-          {{ t('topBarNewChat') }}
-        </Button>
       </div>
     </div>
   </section>

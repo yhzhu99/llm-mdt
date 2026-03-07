@@ -29,3 +29,10 @@ export function pickBestReasoningText(...values: Array<unknown>) {
 
   return ''
 }
+
+export function isAbortError(error: unknown) {
+  if (!error || typeof error !== 'object') return false
+
+  const candidate = error as { name?: unknown }
+  return candidate.name === 'AbortError'
+}

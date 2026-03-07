@@ -19,6 +19,7 @@ import type {
   Stage3StreamState,
   StreamStatusMeta,
 } from '@/types'
+import { isAbortError } from '@/utils'
 import { getProviderStatusText, groupConversationsByDate, toRuntimeConfig } from '@/utils/conversations'
 
 const placeholderConversationTitles = new Set(['', 'New Conversation', 'Conversation', '新对话'])
@@ -118,6 +119,14 @@ const createFreshAssistantMessage = (assistantId: string, councilOrder: string[]
   created_at: createdAt || new Date().toISOString(),
 })
 
+const markStatusMapAsIdle = (statuses: Record<string, StreamStatusMeta>) =>
+  Object.fromEntries(
+    Object.entries(statuses).map(([model, meta]) => [
+      model,
+      meta.status === 'running' ? { status: 'idle' as const } : meta,
+    ]),
+  ) as Record<string, StreamStatusMeta>
+
 const markStatusMapAsError = (statuses: Record<string, StreamStatusMeta>, message: string) =>
   Object.fromEntries(
     Object.entries(statuses).map(([model, meta]) => [
@@ -154,6 +163,26 @@ const ensureLiveAssistantMessage = (message: AssistantConversationMessage): Live
 const getRunTimestamp = (state: ConversationRunState) =>
   new Date(state.lastActivityAt || state.completedAt || state.startedAt || 0).getTime()
 
+const getLatestUserMessageIndex = (conversation: Conversation) => {
+  for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
+    if (conversation.messages[index]?.role === 'user') {
+      return index
+    }
+  }
+
+  return -1
+}
+
+const getLatestAssistantMessageIndex = (conversation: Conversation) => {
+  for (let index = conversation.messages.length - 1; index >= 0; index -= 1) {
+    if (conversation.messages[index]?.role === 'assistant') {
+      return index
+    }
+  }
+
+  return -1
+}
+
 export function useMdtApp() {
   const { locale, setLocale, t } = useI18n()
   const conversations = ref<ConversationSummary[]>([])
@@ -176,6 +205,7 @@ export function useMdtApp() {
   const preferredProjectId = ref<string | null>(null)
   const preferredConversationId = ref<string | null>(null)
   const resumingRunIds = new Set<string>()
+  const activeRunControllers = new Map<string, { requestId: string; controller: AbortController }>()
 
   const currentProject = computed(
     () => projects.value.find((project) => project.id === currentProjectId.value) || null,
@@ -352,6 +382,24 @@ export function useMdtApp() {
   const deletePersistedRun = async (conversationId: string) => {
     removePersistedRunFromCache(conversationId)
     await api.deleteConversationRun(conversationId)
+  }
+
+  const persistCachedConversation = async (conversationId: string) => {
+    const conversation = conversationCache.value[conversationId]
+    if (!conversation) return null
+    const saved = await api.saveConversation(conversation)
+    return setConversationInCache(saved)
+  }
+
+  const setActiveRunController = (conversationId: string, requestId: string, controller: AbortController) => {
+    activeRunControllers.set(conversationId, { requestId, controller })
+  }
+
+  const clearActiveRunController = (conversationId: string, requestId: string) => {
+    const current = activeRunControllers.get(conversationId)
+    if (current?.requestId === requestId) {
+      activeRunControllers.delete(conversationId)
+    }
   }
 
   const syncPersistedRunProgress = (
@@ -583,6 +631,8 @@ export function useMdtApp() {
 
     for (const [conversationId, conversation] of Object.entries(conversationCache.value)) {
       if (conversation.project_id === projectId) {
+        activeRunControllers.get(conversationId)?.controller.abort()
+        activeRunControllers.delete(conversationId)
         delete nextCache[conversationId]
         delete nextRunStates[conversationId]
         resumingRunIds.delete(conversationId)
@@ -644,6 +694,7 @@ export function useMdtApp() {
 
   const deleteConversation = async (conversationId: string) => {
     try {
+      stopConversation(conversationId)
       await api.deleteConversation(conversationId)
       await deletePersistedRun(conversationId).catch(() => undefined)
       resumingRunIds.delete(conversationId)
@@ -767,11 +818,97 @@ export function useMdtApp() {
     lastError: '',
   })
 
+  const createRunningAssistantPlaceholder = (assistantMessageId = createRequestId(), assistantCreatedAt?: string) => {
+    const assistantMessage = createFreshAssistantMessage(
+      assistantMessageId,
+      runtimeConfig.value.council_models,
+      assistantCreatedAt,
+    )
+    assistantMessage.loading = {
+      stage1: true,
+      stage2: false,
+      stage3: false,
+    }
+    return assistantMessage
+  }
+
+  const launchConversationRun = async ({
+    conversationId,
+    projectId,
+    assistantMessageId,
+    assistantMessageCreatedAt,
+    userMessageId,
+    content,
+    shouldGenerateTitle,
+    messageLocale,
+  }: {
+    conversationId: string
+    projectId: string
+    assistantMessageId: string
+    assistantMessageCreatedAt?: string
+    userMessageId: string
+    content: string
+    shouldGenerateTitle: boolean
+    messageLocale: 'zh-CN' | 'en'
+  }) => {
+    const requestId = createRequestId()
+    const startedAt = new Date().toISOString()
+    const persistedRun = buildPersistedRun({
+      conversationId,
+      projectId,
+      requestId,
+      assistantMessageId,
+      userMessageId,
+      content,
+      shouldGenerateTitle,
+      startedAt,
+    })
+
+    try {
+      await savePersistedRun(persistedRun)
+    } catch (error) {
+      console.error('Failed to save persisted run', error)
+      return false
+    }
+
+    conversationRunStates.value[conversationId] = {
+      requestId,
+      status: 'running',
+      stage: 'stage1',
+      startedAt,
+      completedAt: null,
+      lastActivityAt: startedAt,
+      lastError: '',
+      hasUnreadUpdate: false,
+      isRecovering: false,
+    }
+
+    void runConversationTask({
+      conversationId,
+      projectId,
+      requestId,
+      assistantMessageId,
+      assistantMessageCreatedAt,
+      content,
+      shouldGenerateTitle,
+      messageLocale,
+    })
+
+    return true
+  }
+
   const rehydrateRunState = (run: PersistedConversationRun) => {
     const current = getRunState(run.conversationId)
     updateConversationRunState(run.conversationId, () => ({
       requestId: run.requestId,
-      status: run.status === 'complete' ? 'complete' : run.status === 'error' ? 'error' : 'running',
+      status:
+        run.status === 'complete'
+          ? 'complete'
+          : run.status === 'error'
+            ? 'error'
+            : run.status === 'stopped'
+              ? 'stopped'
+              : 'running',
       stage: run.stage,
       startedAt: run.startedAt,
       completedAt: run.status === 'running' ? null : run.updatedAt,
@@ -842,6 +979,9 @@ export function useMdtApp() {
 
   const syncConversationAfterRun = async (conversationId: string, projectId: string, requestId: string) => {
     try {
+      if (getRunState(conversationId).status === 'stopped') {
+        await persistCachedConversation(conversationId)
+      }
       if (projectId === currentProjectId.value) {
         await loadConversations(projectId)
       }
@@ -934,18 +1074,61 @@ export function useMdtApp() {
 
     const queue: Array<(message: LiveAssistantMessage) => LiveAssistantMessage> = []
     let scheduled = false
+    const flushAssistantUpdates = () => {
+      if (!isActiveRequest(conversationId, requestId)) return
+      const jobs = queue.splice(0, queue.length)
+      if (jobs.length === 0) return
+      updateAssistantMessage((message) => jobs.reduce((current, job) => job(current), message))
+    }
     const enqueueAssistantUpdate = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
       queue.push(recipe)
       if (scheduled) return
       scheduled = true
       window.requestAnimationFrame(() => {
         scheduled = false
-        if (!isActiveRequest(conversationId, requestId)) return
-        const jobs = queue.splice(0, queue.length)
-        if (jobs.length === 0) return
-        updateAssistantMessage((message) => jobs.reduce((current, job) => job(current), message))
+        flushAssistantUpdates()
       })
     }
+
+    const setAssistantStoppedState = () => {
+      updateAssistantMessage((message) => ({
+        ...message,
+        streamMeta: {
+          stage1: markStatusMapAsIdle(message.streamMeta.stage1),
+          stage2: markStatusMapAsIdle(message.streamMeta.stage2),
+          stage3: message.streamMeta.stage3.status === 'running' ? { status: 'idle' } : message.streamMeta.stage3,
+        },
+        loading: {
+          stage1: false,
+          stage2: false,
+          stage3: false,
+        },
+      }))
+    }
+
+    const markConversationStopped = () => {
+      if (!isActiveRequest(conversationId, requestId)) return
+      flushAssistantUpdates()
+      setAssistantStoppedState()
+      const now = new Date().toISOString()
+      updateConversationRunState(conversationId, (state) => ({
+        ...state,
+        status: 'stopped',
+        completedAt: now,
+        lastActivityAt: now,
+        lastError: '',
+        hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+        isRecovering: false,
+      }))
+      syncPersistedRunProgress(conversationId, requestId, {
+        status: 'stopped',
+        updatedAt: now,
+        lastError: '',
+      })
+    }
+
+    const abortController = new AbortController()
+    setActiveRunController(conversationId, requestId, abortController)
 
     try {
       await api.sendMessageStream(
@@ -1262,6 +1445,9 @@ export function useMdtApp() {
               })
               break
             }
+            case 'stopped':
+              markConversationStopped()
+              break
           }
         },
         {
@@ -1269,10 +1455,15 @@ export function useMdtApp() {
           shouldGenerateTitle,
           assistantMessageId,
           assistantMessageCreatedAt,
+          signal: abortController.signal,
         },
       )
     } catch (error) {
       if (!isActiveRequest(conversationId, requestId)) return
+      if (isAbortError(error)) {
+        markConversationStopped()
+        return
+      }
       const errorMessage = error instanceof Error ? error.message : String(error)
       lastProviderError.value = errorMessage
       setAssistantErrorState(errorMessage)
@@ -1292,6 +1483,8 @@ export function useMdtApp() {
         lastError: errorMessage,
       })
     } finally {
+      flushAssistantUpdates()
+      clearActiveRunController(conversationId, requestId)
       await syncConversationAfterRun(conversationId, projectId, requestId)
     }
   }
@@ -1399,6 +1592,98 @@ export function useMdtApp() {
     await resumePersistedRuns([conversationId], { includeErrored: true })
   }
 
+  const stopConversation = (conversationId = currentConversationId.value) => {
+    if (!conversationId) return
+    if (getRunState(conversationId).status !== 'running') return
+    activeRunControllers.get(conversationId)?.controller.abort()
+  }
+
+  const rerunConversation = async (content: string, conversationId = currentConversationId.value) => {
+    const trimmedContent = String(content || '').trim()
+    if (!trimmedContent || !conversationId) return
+
+    if (!providerConfigured.value) {
+      lastProviderError.value = t('errorConfigureProviderBeforeSend')
+      openSettings()
+      return
+    }
+
+    const currentRunState = conversationRunStates.value[conversationId]
+    if (currentRunState?.status === 'running') {
+      lastProviderError.value = t('errorConversationAlreadyRunning')
+      return
+    }
+
+    let conversation: Conversation | null = conversationCache.value[conversationId] || null
+    if (!conversation) {
+      conversation = await loadConversation(conversationId, { force: true })
+    }
+    if (!conversation) return
+
+    const latestUserMessageIndex = getLatestUserMessageIndex(conversation)
+    if (latestUserMessageIndex < 0) return
+
+    const latestUserMessage = conversation.messages[latestUserMessageIndex]
+    if (!latestUserMessage || latestUserMessage.role !== 'user') return
+
+    lastProviderError.value = ''
+
+    const assistantMessage = createRunningAssistantPlaceholder()
+    const latestAssistantMessageIndex = getLatestAssistantMessageIndex(conversation)
+    const shouldGenerateTitle = !hasResolvedConversationTitle(conversation)
+
+    const nextConversation = updateConversationById(conversationId, (currentConversationValue) => {
+      const baselineConversation = currentConversationValue || cloneValue(conversation)
+      const nextMessages = [...baselineConversation.messages]
+
+      nextMessages[latestUserMessageIndex] = {
+        ...nextMessages[latestUserMessageIndex],
+        role: 'user',
+        content: trimmedContent,
+      }
+
+      if (latestAssistantMessageIndex >= 0 && latestAssistantMessageIndex > latestUserMessageIndex) {
+        nextMessages[latestAssistantMessageIndex] = assistantMessage
+      } else {
+        nextMessages.splice(latestUserMessageIndex + 1, 0, assistantMessage)
+      }
+
+      return {
+        ...baselineConversation,
+        messages: nextMessages,
+      }
+    })
+
+    if (!nextConversation) return
+
+    try {
+      await api.saveConversation(nextConversation)
+    } catch (error) {
+      console.error('Failed to persist rerun conversation', error)
+      await loadConversation(conversationId, { force: true })
+      return
+    }
+
+    upsertConversationInSidebar({
+      id: nextConversation.id,
+      project_id: nextConversation.project_id,
+      created_at: nextConversation.created_at,
+      title: nextConversation.title,
+      message_count: nextConversation.messages.length,
+    })
+
+    await launchConversationRun({
+      conversationId: nextConversation.id,
+      projectId: nextConversation.project_id,
+      assistantMessageId: assistantMessage.id,
+      assistantMessageCreatedAt: assistantMessage.created_at,
+      userMessageId: latestUserMessage.id || createRequestId(),
+      content: trimmedContent,
+      shouldGenerateTitle,
+      messageLocale: locale.value,
+    })
+  }
+
   const sendMessage = async (content: string) => {
     const trimmedContent = String(content || '').trim()
     if (!trimmedContent) return
@@ -1439,16 +1724,7 @@ export function useMdtApp() {
 
     lastProviderError.value = ''
 
-    const requestId = createRequestId()
-    const assistantMessage = {
-      ...createAssistantMessage(runtimeConfig.value.council_models),
-      id: requestId,
-      loading: {
-        stage1: true,
-        stage2: false,
-        stage3: false,
-      },
-    }
+    const assistantMessage = createRunningAssistantPlaceholder()
     const userMessage = createUserMessage(trimmedContent)
     const optimisticCreatedAt = conversationForRequest.created_at || new Date().toISOString()
     const optimisticTitle = String(conversationForRequest.title || t('conversationUntitled')).trim()
@@ -1498,43 +1774,12 @@ export function useMdtApp() {
       await loadProjects()
     }
 
-    const startedAt = new Date().toISOString()
-    const persistedRun = buildPersistedRun({
+    await launchConversationRun({
       conversationId: conversationIdForRequest,
       projectId: activeProjectId,
-      requestId,
-      assistantMessageId: assistantMessage.id,
-      userMessageId: userMessage.id || requestId,
-      content: trimmedContent,
-      shouldGenerateTitle,
-      startedAt,
-    })
-
-    try {
-      await savePersistedRun(persistedRun)
-    } catch (error) {
-      console.error('Failed to save persisted run', error)
-      return
-    }
-
-    conversationRunStates.value[conversationIdForRequest] = {
-      requestId,
-      status: 'running',
-      stage: 'stage1',
-      startedAt,
-      completedAt: null,
-      lastActivityAt: startedAt,
-      lastError: '',
-      hasUnreadUpdate: false,
-      isRecovering: false,
-    }
-
-    void runConversationTask({
-      conversationId: conversationIdForRequest,
-      projectId: activeProjectId,
-      requestId,
       assistantMessageId: assistantMessage.id,
       assistantMessageCreatedAt: assistantMessage.created_at,
+      userMessageId: userMessage.id || createRequestId(),
       content: trimmedContent,
       shouldGenerateTitle,
       messageLocale: locale.value,
@@ -1625,11 +1870,13 @@ export function useMdtApp() {
     renameConversation,
     renameProject,
     retryConversationRecovery,
+    rerunConversation,
     saveSettings,
     selectConversation,
     selectProject,
     sendMessage,
     setLocale: setAppLocale,
+    stopConversation,
     toggleSidebar: () => {
       isSidebarCollapsed.value = !isSidebarCollapsed.value
     },

@@ -14,6 +14,7 @@ const {
   currentConversationId,
   currentConversationRecoveryError,
   currentConversationRecovering,
+  currentConversationRunState,
   currentConversationRunning,
   currentProjectId,
   draftMessage,
@@ -39,11 +40,13 @@ const {
   renameConversation,
   renameProject,
   retryConversationRecovery,
+  rerunConversation,
   saveSettings,
   selectConversation,
   selectProject,
   sendMessage,
   setLocale,
+  stopConversation,
   t,
   toggleSidebar,
 } = useMdtApp()
@@ -96,11 +99,14 @@ const topBarTitle = computed(() => {
         :is-recovering="currentConversationRecovering"
         :recovery-error="currentConversationRecoveryError"
         :provider-configured="providerConfigured"
+        :run-status="currentConversationRunState.status"
         :runtime-config="runtimeConfig"
         @new-conversation="newConversation"
         @open-settings="openSettings"
+        @rerun="rerunConversation"
         @retry-recovery="retryConversationRecovery"
         @send="sendMessage"
+        @stop="stopConversation"
       />
     </div>
 

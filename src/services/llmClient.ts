@@ -9,7 +9,7 @@ import type {
   RequestAttemptDiagnostic,
   RequestMode,
 } from '@/types'
-import { normalizeReasoningText, pickBestReasoningText } from '@/utils'
+import { isAbortError, normalizeReasoningText, pickBestReasoningText } from '@/utils'
 
 interface RequestConfig {
   endpoint: string
@@ -473,9 +473,25 @@ function extractEventText(payload: Record<string, unknown>) {
   )
 }
 
-async function doFetch(url: string, settings: ProviderSettings, payload: Record<string, unknown>, timeoutMs: number) {
+async function doFetch(
+  url: string,
+  settings: ProviderSettings,
+  payload: Record<string, unknown>,
+  timeoutMs: number,
+  signal?: AbortSignal,
+) {
   const controller = new AbortController()
-  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs)
+  let didTimeout = false
+  const timeoutId = window.setTimeout(() => {
+    didTimeout = true
+    controller.abort()
+  }, timeoutMs)
+  const handleAbort = () => controller.abort()
+
+  signal?.addEventListener('abort', handleAbort)
+  if (signal?.aborted) {
+    handleAbort()
+  }
 
   try {
     const response = await fetch(url, {
@@ -491,8 +507,14 @@ async function doFetch(url: string, settings: ProviderSettings, payload: Record<
     }
 
     return response
+  } catch (error) {
+    if (didTimeout && isAbortError(error)) {
+      throw createRequestError('Request timed out')
+    }
+    throw error
   } finally {
     window.clearTimeout(timeoutId)
+    signal?.removeEventListener('abort', handleAbort)
   }
 }
 
@@ -528,7 +550,7 @@ function parseJsonResult(requestConfig: RequestConfig, data: Record<string, unkn
 
 export async function chatCompletion(
   settings: ProviderSettings,
-  { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
+  { model, messages, timeoutMs = 120000, signal }: ChatCompletionOptions,
 ) {
   const requestConfigs = createRequestConfigs(settings.baseUrl, settings.requestMode)
   let lastError: unknown = null
@@ -541,6 +563,7 @@ export async function chatCompletion(
         settings,
         buildPayload(requestConfig, { model, messages, stream: false }),
         timeoutMs,
+        signal,
       )
       const data = (await response.json()) as Record<string, unknown>
       const parsed = parseJsonResult(requestConfig, data)
@@ -567,6 +590,9 @@ export async function chatCompletion(
         },
       }
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error
+      }
       lastError = error
       attempts.push({
         mode: requestConfig.mode,
@@ -867,7 +893,7 @@ async function* streamFromResponse(
 
 export async function* chatCompletionStream(
   settings: ProviderSettings,
-  { model, messages, timeoutMs = 120000 }: ChatCompletionOptions,
+  { model, messages, timeoutMs = 120000, signal }: ChatCompletionOptions,
 ): AsyncGenerator<ChatCompletionStreamEvent> {
   const requestConfigs = createRequestConfigs(settings.baseUrl, settings.requestMode)
   let lastError: unknown = null
@@ -880,6 +906,7 @@ export async function* chatCompletionStream(
         settings,
         buildPayload(requestConfig, { model, messages, stream: true }),
         timeoutMs,
+        signal,
       )
 
       for await (const event of streamFromResponse(requestConfig, response, {
@@ -891,6 +918,9 @@ export async function* chatCompletionStream(
       }
       return
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error
+      }
       lastError = error
       attempts.push({
         mode: requestConfig.mode,

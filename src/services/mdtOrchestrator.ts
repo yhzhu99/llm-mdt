@@ -2,14 +2,14 @@ import { conversationStore } from './conversationStore'
 import { chatCompletion, chatCompletionStream } from './llmClient'
 import { isProviderConfigured } from './providerSettings'
 import { translate } from '@/i18n'
-import { pickBestReasoningText } from '@/utils'
+import { isAbortError, pickBestReasoningText } from '@/utils'
 import type {
   AppLocale,
   ChatCompletionClient,
   ChatCompletionMessage,
   ConversationRepository,
-  MdtRunPersistenceOptions,
   MdtEventHandler,
+  MdtRunOptions,
   MdtStreamEvent,
   ParsedStage2Ranking,
   ProviderSettings,
@@ -177,6 +177,7 @@ async function collectStageResponses({
   emit,
   valueKey,
   locale,
+  signal,
 }: {
   stagePrefix: 'stage1' | 'stage2'
   models: string[]
@@ -186,6 +187,7 @@ async function collectStageResponses({
   emit: (event: MdtStreamEvent) => void
   valueKey: 'response' | 'ranking'
   locale: AppLocale
+  signal?: AbortSignal
 }) {
   emit({ type: `${stagePrefix}_start` } as MdtStreamEvent)
 
@@ -201,7 +203,7 @@ async function collectStageResponses({
       let failed = false
 
       try {
-        for await (const event of client.chatCompletionStream(settings, { model, messages })) {
+        for await (const event of client.chatCompletionStream(settings, { model, messages, signal })) {
           if (event.delta_type === 'content') {
             const text = event.text || ''
             contentAcc += text
@@ -235,6 +237,9 @@ async function collectStageResponses({
           }
         }
       } catch (error) {
+        if (isAbortError(error)) {
+          throw error
+        }
         failed = true
         emit({
           type: `${stagePrefix}_model_error`,
@@ -271,6 +276,7 @@ async function generateConversationTitle(
   settings: ProviderSettings,
   client: ChatCompletionClient,
   locale: AppLocale,
+  signal?: AbortSignal,
 ) {
   const titleModel = settings.titleModel || settings.chairmanModel
   if (!titleModel) {
@@ -282,6 +288,7 @@ async function generateConversationTitle(
       model: titleModel,
       messages: [{ role: 'user', content: buildTitlePrompt(userQuery) }],
       timeoutMs: 30000,
+      signal,
     })
 
     const title = String(response.content || translate(locale, 'conversationUntitled'))
@@ -293,7 +300,10 @@ async function generateConversationTitle(
     }
 
     return title.length > 50 ? `${title.slice(0, 47)}...` : title
-  } catch {
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error
+    }
     return translate(locale, 'conversationUntitled')
   }
 }
@@ -313,7 +323,7 @@ export async function runMdtConversationStream({
   locale?: AppLocale
   settings: ProviderSettings
   onEvent?: MdtEventHandler
-  options?: MdtRunPersistenceOptions
+  options?: MdtRunOptions
   conversationRepo?: ConversationRepository
   client?: ChatCompletionClient
 }) {
@@ -337,7 +347,12 @@ export async function runMdtConversationStream({
       ? options.shouldGenerateTitle
       : (conversation.messages || []).length === 0
   const titlePromise = isFirstMessage
-    ? generateConversationTitle(content, settings, client, locale)
+    ? generateConversationTitle(content, settings, client, locale, options?.signal).catch((error) => {
+        if (isAbortError(error)) {
+          return null
+        }
+        throw error
+      })
     : Promise.resolve<string | null>(null)
 
   if (options?.persistUserMessage !== false) {
@@ -359,6 +374,7 @@ export async function runMdtConversationStream({
       emit,
       valueKey: 'response',
       locale,
+      signal: options?.signal,
     })) as Stage1Result[]
     emit({ type: 'stage1_complete', data: stage1Results })
 
@@ -376,6 +392,7 @@ export async function runMdtConversationStream({
         emit,
         valueKey: 'ranking',
         locale,
+        signal: options?.signal,
       })) as Stage2Result[]
       stage2Results = stage2Results.map((result) => ({
         ...result,
@@ -400,6 +417,7 @@ export async function runMdtConversationStream({
             content: buildChairmanPrompt(content, stage1Results, stage2Results),
           },
         ],
+        signal: options?.signal,
       })) {
         if (event.delta_type === 'content') {
           const text = event.text || ''
@@ -450,6 +468,11 @@ export async function runMdtConversationStream({
       emit({ type: 'stage3_complete', data: stage3Result })
     }
   } catch (error) {
+    if (isAbortError(error)) {
+      emit({ type: 'stopped' })
+      return
+    }
+
     emit({
       type: 'error',
       message: error instanceof Error ? error.message : String(error),

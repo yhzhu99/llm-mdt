@@ -10,7 +10,7 @@ import type {
   Conversation,
   HealthStatus,
   MdtEventHandler,
-  MdtRunPersistenceOptions,
+  MdtRunOptions,
   PersistedConversationRun,
   ProviderSettingsInput,
   RuntimeConfig,
@@ -156,7 +156,7 @@ export const api = {
     conversationId: string,
     payload: SendMessagePayload,
     onEvent: MdtEventHandler,
-    options?: MdtRunPersistenceOptions,
+    options?: MdtRunOptions,
   ) {
     const settings = await settingsStore.get()
     return runMdtConversationStream({

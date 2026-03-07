@@ -3,7 +3,7 @@ export type StreamDeltaType = 'content' | 'reasoning'
 export type StreamStatus = 'idle' | 'running' | 'complete' | 'error'
 export type AppLocale = 'zh-CN' | 'en'
 export type ConversationRunStage = 'stage1' | 'stage2' | 'stage3' | null
-export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error'
+export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stopped'
 export type RequestMode = 'responses' | 'chat-completions'
 export type ProviderRequestMode = 'auto' | RequestMode
 
@@ -215,7 +215,7 @@ export interface PersistedConversationRun {
   startedAt: string
   updatedAt: string
   stage: ConversationRunStage
-  status: Extract<ConversationRunStatus, 'running' | 'complete' | 'error'>
+  status: Extract<ConversationRunStatus, 'running' | 'complete' | 'error' | 'stopped'>
   lastError?: string
 }
 
@@ -245,6 +245,10 @@ export interface MdtRunPersistenceOptions {
   assistantMessageCreatedAt?: string
 }
 
+export interface MdtRunOptions extends MdtRunPersistenceOptions {
+  signal?: AbortSignal
+}
+
 export interface SendMessageResult {
   stage1: Stage1Result[]
   stage2: Stage2Result[]
@@ -261,6 +265,7 @@ export interface ChatCompletionOptions {
   model: string
   messages: ChatCompletionMessage[]
   timeoutMs?: number
+  signal?: AbortSignal
 }
 
 export interface ChatCompletionResult {
@@ -395,6 +400,10 @@ export interface MdtCompleteEvent {
   type: 'complete'
 }
 
+export interface MdtStoppedEvent {
+  type: 'stopped'
+}
+
 export type MdtStreamEvent =
   | MdtStage1StartEvent
   | MdtStage1ModelStartEvent
@@ -413,5 +422,6 @@ export type MdtStreamEvent =
   | MdtTitleCompleteEvent
   | MdtErrorEvent
   | MdtCompleteEvent
+  | MdtStoppedEvent
 
 export type MdtEventHandler = (eventType: MdtStreamEvent['type'], event: MdtStreamEvent) => void
