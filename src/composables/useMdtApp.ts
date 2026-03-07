@@ -267,13 +267,27 @@ export function useMdtApp() {
     return Boolean(trimmed) && !placeholderConversationTitles.has(trimmed)
   }
 
-  const isActiveRequest = (conversationId: string, requestId: string) =>
+  const isMatchingRequest = (conversationId: string, requestId: string) =>
     conversationRunStates.value[conversationId]?.requestId === requestId
+
+  const isActiveRequest = (conversationId: string, requestId: string) =>
+    isMatchingRequest(conversationId, requestId) && conversationRunStates.value[conversationId]?.status === 'running'
 
   const getConversationSummary = (conversationId: string) =>
     conversations.value.find((entry) => entry.id === conversationId) || null
 
   const getRunState = (conversationId: string) => conversationRunStates.value[conversationId] || createIdleRunState()
+
+  const getLatestAssistantMessageId = (conversationId: string) => {
+    const conversation = conversationCache.value[conversationId]
+    if (!conversation) return null
+
+    const assistantIndex = getLatestAssistantMessageIndex(conversation)
+    if (assistantIndex < 0) return null
+
+    const message = conversation.messages[assistantIndex]
+    return message?.role === 'assistant' ? message.id || null : null
+  }
 
   const setConversationInCache = (conversation: Conversation) => {
     conversationCache.value[conversation.id] = cloneValue(conversation)
@@ -417,6 +431,46 @@ export function useMdtApp() {
     }
     cachePersistedRun(next)
     void api.saveConversationRun(next)
+  }
+
+  const markConversationStoppedState = (
+    conversationId: string,
+    requestId: string,
+    assistantMessageId = persistedRuns.value[conversationId]?.assistantMessageId || getLatestAssistantMessageId(conversationId),
+  ) => {
+    if (!isMatchingRequest(conversationId, requestId)) return
+
+    if (assistantMessageId) {
+      updateAssistantMessageInConversation(conversationId, assistantMessageId, (message) => ({
+        ...message,
+        streamMeta: {
+          stage1: markStatusMapAsIdle(message.streamMeta.stage1),
+          stage2: markStatusMapAsIdle(message.streamMeta.stage2),
+          stage3: message.streamMeta.stage3.status === 'running' ? { status: 'idle' } : message.streamMeta.stage3,
+        },
+        loading: {
+          stage1: false,
+          stage2: false,
+          stage3: false,
+        },
+      }))
+    }
+
+    const now = new Date().toISOString()
+    updateConversationRunState(conversationId, (state) => ({
+      ...state,
+      status: 'stopped',
+      completedAt: now,
+      lastActivityAt: now,
+      lastError: '',
+      hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
+      isRecovering: false,
+    }))
+    syncPersistedRunProgress(conversationId, requestId, {
+      status: 'stopped',
+      updatedAt: now,
+      lastError: '',
+    })
   }
 
   const deletePersistedRunIfSettled = async (conversationId: string) => {
@@ -1038,7 +1092,7 @@ export function useMdtApp() {
     messageLocale: 'zh-CN' | 'en'
   }) => {
     const updateAssistantMessage = (recipe: (message: LiveAssistantMessage) => LiveAssistantMessage) => {
-      if (!isActiveRequest(conversationId, requestId)) return
+      if (!isMatchingRequest(conversationId, requestId)) return
       updateAssistantMessageInConversation(conversationId, assistantMessageId, recipe)
     }
 
@@ -1075,7 +1129,7 @@ export function useMdtApp() {
     const queue: Array<(message: LiveAssistantMessage) => LiveAssistantMessage> = []
     let scheduled = false
     const flushAssistantUpdates = () => {
-      if (!isActiveRequest(conversationId, requestId)) return
+      if (!isMatchingRequest(conversationId, requestId)) return
       const jobs = queue.splice(0, queue.length)
       if (jobs.length === 0) return
       updateAssistantMessage((message) => jobs.reduce((current, job) => job(current), message))
@@ -1090,41 +1144,10 @@ export function useMdtApp() {
       })
     }
 
-    const setAssistantStoppedState = () => {
-      updateAssistantMessage((message) => ({
-        ...message,
-        streamMeta: {
-          stage1: markStatusMapAsIdle(message.streamMeta.stage1),
-          stage2: markStatusMapAsIdle(message.streamMeta.stage2),
-          stage3: message.streamMeta.stage3.status === 'running' ? { status: 'idle' } : message.streamMeta.stage3,
-        },
-        loading: {
-          stage1: false,
-          stage2: false,
-          stage3: false,
-        },
-      }))
-    }
-
     const markConversationStopped = () => {
-      if (!isActiveRequest(conversationId, requestId)) return
+      if (!isMatchingRequest(conversationId, requestId)) return
       flushAssistantUpdates()
-      setAssistantStoppedState()
-      const now = new Date().toISOString()
-      updateConversationRunState(conversationId, (state) => ({
-        ...state,
-        status: 'stopped',
-        completedAt: now,
-        lastActivityAt: now,
-        lastError: '',
-        hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
-        isRecovering: false,
-      }))
-      syncPersistedRunProgress(conversationId, requestId, {
-        status: 'stopped',
-        updatedAt: now,
-        lastError: '',
-      })
+      markConversationStoppedState(conversationId, requestId, assistantMessageId)
     }
 
     const abortController = new AbortController()
@@ -1135,7 +1158,8 @@ export function useMdtApp() {
         conversationId,
         { content, locale: messageLocale },
         async (_eventType, event) => {
-          if (!isActiveRequest(conversationId, requestId)) return
+          if (!isMatchingRequest(conversationId, requestId)) return
+          if (event.type !== 'stopped' && !isActiveRequest(conversationId, requestId)) return
 
           switch (event.type) {
             case 'stage1_start':
@@ -1459,7 +1483,7 @@ export function useMdtApp() {
         },
       )
     } catch (error) {
-      if (!isActiveRequest(conversationId, requestId)) return
+      if (!isMatchingRequest(conversationId, requestId)) return
       if (isAbortError(error)) {
         markConversationStopped()
         return
@@ -1594,7 +1618,9 @@ export function useMdtApp() {
 
   const stopConversation = (conversationId = currentConversationId.value) => {
     if (!conversationId) return
-    if (getRunState(conversationId).status !== 'running') return
+    const state = getRunState(conversationId)
+    if (state.status !== 'running' || !state.requestId) return
+    markConversationStoppedState(conversationId, state.requestId)
     activeRunControllers.get(conversationId)?.controller.abort()
   }
 
