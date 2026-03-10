@@ -95,7 +95,7 @@ const messages = {
     stage2Subtitle: '模型互评与排序',
     stage3Title: '阶段 3',
     stage3Subtitle: '最终综合结论',
-    stageThinking: '思考中',
+    stageThinking: '思考内容',
     stageThinkingEllipsis: '思考中…',
     stageShowThinking: '查看思考',
     stageHideThinking: '隐藏思考',
