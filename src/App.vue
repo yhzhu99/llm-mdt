@@ -40,12 +40,10 @@ const {
   openSettings,
   renameConversation,
   renameProject,
-  resetChatRunPreferences,
   retryConversationRecovery,
   rerunConversation,
   saveSettings,
   selectConversation,
-  selectAllChatCouncilModels,
   selectProject,
   sendMessage,
   setLocale,
@@ -109,11 +107,9 @@ const topBarTitle = computed(() => {
         :runtime-config="runtimeConfig"
         @new-conversation="newConversation"
         @open-settings="openSettings"
-        @reset-run-config="resetChatRunPreferences"
         @rerun="rerunConversation"
         @retry-recovery="retryConversationRecovery"
         @send="sendMessage"
-        @select-all-models="selectAllChatCouncilModels"
         @stop="stopConversation"
         @toggle-model="toggleChatCouncilModel"
         @update-target-stage="setChatTargetStage"

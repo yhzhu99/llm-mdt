@@ -146,8 +146,6 @@ const emit = defineEmits<{
   (event: 'update:draft', value: string): void
   (event: 'update-target-stage', value: StageKey): void
   (event: 'toggle-model', model: string): void
-  (event: 'select-all-models'): void
-  (event: 'reset-run-config'): void
   (event: 'send', value: string): void
   (event: 'new-conversation'): void
   (event: 'open-settings'): void
@@ -261,8 +259,6 @@ const latestUserEntry = computed(() => {
 const handleSend = (value: string) => emit('send', value)
 const handleTargetStageChange = (value: StageKey) => emit('update-target-stage', value)
 const handleToggleModel = (model: string) => emit('toggle-model', model)
-const handleSelectAllModels = () => emit('select-all-models')
-const handleResetRunConfig = () => emit('reset-run-config')
 const autosizeEditTextarea = () => {
   const textarea = editTextareaRef.value
   if (!textarea) return
@@ -581,7 +577,7 @@ watch(
       <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full w-full max-w-[80rem] items-center">
         <div class="w-full space-y-5 py-6 sm:py-10">
           <div class="space-y-2">
-            <h2 class="text-[clamp(2.25rem,4.4vw,4.5rem)] font-semibold tracking-[-0.05em] text-foreground lg:whitespace-nowrap">
+            <h2 class="max-w-[22ch] text-[clamp(2.25rem,4.4vw,4.5rem)] font-semibold leading-[0.95] tracking-[-0.05em] text-foreground [text-wrap:balance]">
               {{ providerConfigured ? t('welcomeTitle') : t('configureBrowserProvider') }}
             </h2>
           </div>
@@ -597,8 +593,6 @@ watch(
             :provider-configured="providerConfigured"
             @open-settings="emit('open-settings')"
             @send="handleSend"
-            @reset-run-config="handleResetRunConfig"
-            @select-all-models="handleSelectAllModels"
             @toggle-model="handleToggleModel"
             @update:target-stage="handleTargetStageChange"
           />

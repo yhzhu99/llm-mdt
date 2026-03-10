@@ -31,8 +31,6 @@ const emit = defineEmits<{
   (event: 'open-settings'): void
   (event: 'update:target-stage', value: MdtTargetStage): void
   (event: 'toggle-model', model: string): void
-  (event: 'select-all-models'): void
-  (event: 'reset-run-config'): void
 }>()
 
 const { t } = useI18n()
@@ -95,84 +93,40 @@ const isOnlySelectedModel = (model: string) =>
     @submit.prevent="handleSubmit"
   >
     <div class="relative p-4 sm:p-5">
-      <div class="relative">
-        <textarea
-          ref="textareaRef"
-          v-model="input"
-          :disabled="disabled || !providerConfigured"
-          :rows="centered ? 6 : 4"
-          :placeholder="t('composerPlaceholder')"
-          :class="
-            centered
-              ? 'min-h-[220px] w-full resize-none border-0 bg-transparent pb-14 pr-16 text-base leading-8 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70 sm:text-[17px]'
-              : 'min-h-[160px] w-full resize-none border-0 bg-transparent pb-14 pr-16 text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70'
-          "
-          @keydown="handleKeydown"
-        />
+      <textarea
+        ref="textareaRef"
+        v-model="input"
+        :disabled="disabled || !providerConfigured"
+        :rows="centered ? 6 : 4"
+        :placeholder="t('composerPlaceholder')"
+        :class="
+          centered
+            ? 'min-h-[220px] w-full resize-none border-0 bg-transparent text-base leading-8 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70 sm:text-[17px]'
+            : 'min-h-[160px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70'
+        "
+        @keydown="handleKeydown"
+      />
 
-        <Button
-          type="submit"
-          size="icon"
-          class="absolute bottom-1 right-0 h-10 w-10 shrink-0 rounded-full shadow-sm"
-          :aria-label="t('composerSend')"
-          :title="t('composerSend')"
-          :disabled="!canSubmit"
-          :variant="providerConfigured ? 'default' : 'secondary'"
-        >
-          <LoaderCircle v-if="isLoading" :size="18" class="animate-spin" />
-          <ArrowUp v-else :size="18" />
-        </Button>
-      </div>
-
-      <div
-        v-if="showRunConfig || isLoading || !providerConfigured"
-        class="mt-4 space-y-3 border-t border-border/70 pt-3"
-      >
-        <template v-if="showRunConfig">
-          <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div class="flex flex-wrap items-center gap-2">
-              <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                {{ t('composerRunToStage') }}
-              </div>
-              <div class="inline-flex flex-wrap gap-1 rounded-full border border-border/70 bg-background/80 p-1">
-                <button
-                  v-for="stage in stageOptions"
-                  :key="stage.key"
-                  type="button"
-                  :disabled="disabled"
-                  :class="
-                    targetStage === stage.key
-                      ? 'rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm'
-                      : 'rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
-                  "
-                  @click="emit('update:target-stage', stage.key)"
-                >
-                  {{ stage.label }}
-                </button>
-              </div>
-            </div>
-
-            <div class="flex flex-wrap items-center gap-2">
+      <div class="mt-3 flex items-end gap-3 border-t border-border/70 pt-3">
+        <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <template v-if="showRunConfig">
+            <div class="inline-flex flex-wrap gap-1 rounded-full border border-border/70 bg-background/80 p-1">
               <button
+                v-for="stage in stageOptions"
+                :key="stage.key"
                 type="button"
-                class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
                 :disabled="disabled"
-                @click="emit('select-all-models')"
+                :class="
+                  targetStage === stage.key
+                    ? 'rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm'
+                    : 'rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
+                "
+                @click="emit('update:target-stage', stage.key)"
               >
-                {{ t('composerSelectAllModels') }}
-              </button>
-              <button
-                type="button"
-                class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
-                :disabled="disabled"
-                @click="emit('reset-run-config')"
-              >
-                {{ t('composerResetRunConfig') }}
+                {{ stage.label }}
               </button>
             </div>
-          </div>
 
-          <div class="flex flex-wrap gap-2">
             <button
               v-for="model in availableModels"
               :key="model"
@@ -195,24 +149,40 @@ const isOnlySelectedModel = (model: string) =>
               />
               <span>{{ shortModelName(model) }}</span>
             </button>
-          </div>
-        </template>
+          </template>
 
-        <div v-if="isLoading" class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-medium text-primary">
-          <LoaderCircle :size="12" class="animate-spin" />
-          {{ t('composerGenerating') }}
-        </div>
-        <div v-else-if="!providerConfigured" class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span>{{ t('composerProviderHint') }}</span>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1 font-medium text-primary transition-colors hover:text-primary/80"
-            @click="emit('open-settings')"
+          <div
+            v-if="isLoading"
+            class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
           >
-            <Settings2 :size="14" />
-            {{ t('openSettings') }}
-          </button>
+            <LoaderCircle :size="12" class="animate-spin" />
+            {{ t('composerGenerating') }}
+          </div>
+          <div v-else-if="!providerConfigured" class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>{{ t('composerProviderHint') }}</span>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 font-medium text-primary transition-colors hover:text-primary/80"
+              @click="emit('open-settings')"
+            >
+              <Settings2 :size="14" />
+              {{ t('openSettings') }}
+            </button>
+          </div>
         </div>
+
+        <Button
+          type="submit"
+          size="icon"
+          class="h-10 w-10 shrink-0 rounded-full shadow-sm"
+          :aria-label="t('composerSend')"
+          :title="t('composerSend')"
+          :disabled="!canSubmit"
+          :variant="providerConfigured ? 'default' : 'secondary'"
+        >
+          <LoaderCircle v-if="isLoading" :size="18" class="animate-spin" />
+          <ArrowUp v-else :size="18" />
+        </Button>
       </div>
     </div>
   </form>
