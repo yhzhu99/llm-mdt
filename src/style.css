@@ -4,22 +4,22 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 33% 98.2%;
+    --foreground: 222 47% 11%;
 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
+    --muted: 210 28% 95.5%;
+    --muted-foreground: 215 16% 42%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
+    --popover-foreground: 222 47% 11%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
+    --card-foreground: 222 47% 11%;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
+    --border: 214 24% 87%;
+    --input: 214 24% 87%;
 
-    --primary: 221.2 83.2% 53.3%;
+    --primary: 221 77% 53%;
     --primary-foreground: 210 40% 98%;
 
     --secondary: 210 40% 96.1%;
@@ -79,6 +79,9 @@
   body {
     @apply min-h-screen bg-background text-foreground;
     font-feature-settings: 'rlig' 1, 'calt' 1;
+    font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
+    background-image: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.88));
+    background-attachment: fixed;
   }
 
   #app {

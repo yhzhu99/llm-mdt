@@ -201,12 +201,12 @@ const handleProjectRename = (projectId: string, title: string) => {
   <aside
     :class="
       cn(
-        'flex h-screen shrink-0 flex-col border-r border-border/80 bg-card/80 transition-all duration-300',
-        isCollapsed ? 'w-[96px]' : 'w-[340px]',
+        'flex h-screen shrink-0 flex-col border-r border-border/80 bg-card/75 backdrop-blur transition-all duration-300',
+        isCollapsed ? 'w-[84px]' : 'w-[320px]',
       )
     "
   >
-    <div :class="cn('border-b border-border/70 py-4', isCollapsed ? 'px-3' : 'px-4')">
+    <div :class="cn('border-b border-border/70 py-3', isCollapsed ? 'px-2.5' : 'px-3.5')">
       <div :class="cn('flex gap-3', isCollapsed ? 'flex-col items-center' : 'items-center justify-between')">
         <button
           type="button"
@@ -214,33 +214,37 @@ const handleProjectRename = (projectId: string, title: string) => {
           :class="
             cn(
               'group flex min-w-0 items-center text-left transition-transform',
-              isCollapsed ? 'w-11 justify-center' : 'flex-1 gap-3',
+              isCollapsed ? 'w-10 justify-center' : 'flex-1 gap-3',
             )
           "
           @click="emit('go-home')"
         >
-          <div class="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-[1.02]">
-            <MessageSquareText :size="20" />
+          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-[1.02]">
+            <MessageSquareText :size="18" />
           </div>
           <div v-if="!isCollapsed" class="min-w-0">
-            <div class="truncate text-base font-semibold text-foreground">
+            <div class="truncate text-sm font-semibold text-foreground">
               {{ t('appNamePrimary') }}
             </div>
-            <div class="truncate text-sm text-muted-foreground">
+            <div class="truncate text-xs text-muted-foreground">
               {{ t('appNameSecondary') }}
             </div>
           </div>
         </button>
 
-        <Button variant="ghost" size="icon" class="shrink-0" @click="emit('toggle-collapsed')">
+        <Button variant="ghost" size="icon" class="h-9 w-9 shrink-0 rounded-xl" @click="emit('toggle-collapsed')">
           <ChevronLeft v-if="!isCollapsed" :size="18" />
           <ChevronRight v-else :size="18" />
         </Button>
       </div>
 
-      <div class="mt-4 flex flex-col gap-2">
+      <div
+        class="mt-3 grid gap-2"
+        :class="isCollapsed ? 'grid-cols-1' : 'grid-cols-2'"
+      >
         <Button
-          :class="cn('w-full rounded-xl', isCollapsed ? 'justify-center px-0' : 'justify-start px-3')"
+          size="sm"
+          :class="cn('w-full h-9 rounded-xl', isCollapsed ? 'justify-center px-0' : 'justify-center px-3')"
           :title="isCollapsed ? t('sidebarNewProject') : undefined"
           @click="openProjectCreate"
         >
@@ -249,7 +253,8 @@ const handleProjectRename = (projectId: string, title: string) => {
         </Button>
         <Button
           variant="secondary"
-          :class="cn('w-full rounded-xl', isCollapsed ? 'justify-center px-0' : 'justify-start px-3')"
+          size="sm"
+          :class="cn('w-full h-9 rounded-xl', isCollapsed ? 'justify-center px-0' : 'justify-center px-3')"
           :title="isCollapsed ? t('sidebarNewConversation') : undefined"
           @click="emit('new-conversation')"
         >
@@ -259,17 +264,17 @@ const handleProjectRename = (projectId: string, title: string) => {
       </div>
     </div>
 
-    <div class="scrollbar-hide flex-1 overflow-y-auto px-3 py-4">
-      <div class="space-y-5">
+    <div class="scrollbar-hide flex-1 overflow-y-auto px-2.5 py-3">
+      <div class="space-y-4">
         <section class="space-y-2">
           <div
             v-if="!isCollapsed"
-            class="px-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
+            class="px-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
           >
             {{ t('sidebarProjects') }}
           </div>
 
-          <div v-if="!projects.length" class="rounded-2xl border border-dashed border-border bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <div v-if="!projects.length" class="rounded-[1.1rem] border border-dashed border-border bg-background/70 px-4 py-5 text-center text-sm text-muted-foreground">
             {{ t('sidebarNoProjects') }}
           </div>
 
@@ -289,20 +294,20 @@ const handleProjectRename = (projectId: string, title: string) => {
               :title="isCollapsed ? showMoreProjectsLabel : undefined"
               :class="
                 cn(
-                  'group flex w-full items-center rounded-2xl border border-dashed border-border/80 px-3 py-3 text-left transition-colors hover:border-primary/30 hover:bg-primary/5',
+                  'group flex w-full items-center rounded-[1.1rem] border border-dashed border-border/80 px-3 py-2.5 text-left transition-colors hover:border-primary/30 hover:bg-primary/5',
                   isCollapsed ? 'justify-center' : 'gap-3',
                 )
               "
               @click="isProjectBrowserOpen = true"
             >
-              <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground">
-                <Ellipsis :size="18" />
+              <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground">
+                <Ellipsis :size="16" />
               </div>
               <div v-if="!isCollapsed" class="min-w-0 flex-1">
                 <div class="truncate text-sm font-medium text-foreground">
                   {{ showMoreProjectsLabel }}
                 </div>
-                <div class="truncate text-xs text-muted-foreground">
+                <div class="truncate text-[11px] text-muted-foreground">
                   {{ t('sidebarAllProjectsDescription') }}
                 </div>
               </div>
@@ -313,21 +318,21 @@ const handleProjectRename = (projectId: string, title: string) => {
         <section class="space-y-2">
           <div
             v-if="!isCollapsed"
-            class="flex items-center gap-2 px-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground"
+            class="flex items-center gap-2 px-2 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
           >
             <FolderOpen :size="14" />
             {{ t('sidebarConversations') }}
           </div>
 
-          <div v-if="!conversations.length" class="rounded-2xl border border-dashed border-border bg-background/70 px-4 py-6 text-center text-sm text-muted-foreground">
+          <div v-if="!conversations.length" class="rounded-[1.1rem] border border-dashed border-border bg-background/70 px-4 py-5 text-center text-sm text-muted-foreground">
             {{ t('sidebarNoConversations') }}
           </div>
 
-          <div v-else class="space-y-5">
+          <div v-else class="space-y-4">
             <div v-for="[groupName, items] in visibleGroups" :key="groupName" class="space-y-2">
               <div
                 v-if="!isCollapsed"
-                class="px-2 text-xs font-semibold tracking-[0.12em] text-muted-foreground"
+                class="px-2 text-[11px] font-semibold tracking-[0.18em] text-muted-foreground"
               >
                 {{ groupName }}
               </div>
@@ -338,7 +343,7 @@ const handleProjectRename = (projectId: string, title: string) => {
                   :key="conversation.id"
                   :class="
                     cn(
-                      'group relative rounded-2xl border border-transparent px-3 py-3 transition-colors',
+                      'group relative rounded-[1.1rem] border border-transparent px-2.5 py-2.5 transition-colors',
                       currentConversationId === conversation.id
                         ? 'border-primary/30 bg-primary/10'
                         : 'hover:bg-muted/60',
@@ -352,9 +357,9 @@ const handleProjectRename = (projectId: string, title: string) => {
                     @click="emit('select-conversation', conversation.id)"
                   >
                     <div
-                      class="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground"
+                      class="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background text-muted-foreground"
                     >
-                      <MessageSquareText :size="18" />
+                      <MessageSquareText :size="16" />
                       <span
                         v-if="showCollapsedConversationDot(conversation.id)"
                         :class="
@@ -408,15 +413,15 @@ const handleProjectRename = (projectId: string, title: string) => {
                   <button
                     v-if="!isCollapsed"
                     type="button"
-                    class="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+                    class="absolute right-2.5 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
                     @click.stop="openConversationMenuId = openConversationMenuId === conversation.id ? null : conversation.id"
                   >
-                    <Ellipsis :size="16" />
+                    <Ellipsis :size="14" />
                   </button>
 
                   <div
                     v-if="openConversationMenuId === conversation.id && !isCollapsed"
-                    class="absolute right-3 top-12 z-20 w-40 overflow-hidden rounded-xl border border-border bg-popover shadow-soft"
+                    class="absolute right-2.5 top-10 z-20 w-36 overflow-hidden rounded-xl border border-border bg-popover shadow-soft"
                   >
                     <button
                       type="button"
@@ -456,9 +461,9 @@ const handleProjectRename = (projectId: string, title: string) => {
       panel-class="max-w-2xl"
       @close="isProjectBrowserOpen = false"
     >
-      <div class="flex items-start justify-between gap-4 border-b border-border/80 bg-background/60 px-6 py-5 backdrop-blur">
-        <div class="space-y-2">
-          <div class="flex items-center gap-2 text-base font-semibold text-foreground">
+      <div class="flex items-start justify-between gap-4 border-b border-border/80 bg-background/60 px-5 py-4 backdrop-blur">
+        <div class="space-y-1.5">
+          <div class="flex items-center gap-2 text-sm font-semibold text-foreground">
             <Ellipsis :size="18" class="text-primary" />
             {{ t('sidebarAllProjects') }}
           </div>
@@ -468,14 +473,14 @@ const handleProjectRename = (projectId: string, title: string) => {
         </div>
         <button
           type="button"
-          class="inline-flex h-10 w-10 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          class="inline-flex h-9 w-9 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           @click="isProjectBrowserOpen = false"
         >
           <X :size="18" />
         </button>
       </div>
 
-      <div class="scrollbar-hide flex-1 overflow-y-auto px-6 py-6">
+      <div class="scrollbar-hide flex-1 overflow-y-auto px-5 py-5">
         <ProjectList
           :projects="projects"
           :current-project-id="currentProjectId"

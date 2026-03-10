@@ -85,7 +85,7 @@ watch(
       :key="project.id"
       :class="
         cn(
-          'group relative rounded-2xl border border-transparent px-3 py-3 transition-colors',
+          'group relative rounded-[1.1rem] border border-transparent px-2.5 py-2.5 transition-colors',
           currentProjectId === project.id ? 'border-primary/30 bg-primary/10' : 'hover:bg-muted/60',
         )
       "
@@ -99,7 +99,7 @@ watch(
         <div
           :class="
             cn(
-              'flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-sm font-semibold text-muted-foreground',
+              'flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-background text-sm font-semibold text-muted-foreground',
               currentProjectId === project.id && 'text-primary',
             )
           "
@@ -130,15 +130,15 @@ watch(
       <button
         v-if="!collapsed"
         type="button"
-        class="absolute right-3 top-3 inline-flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
+        class="absolute right-2.5 top-2.5 inline-flex h-7 w-7 items-center justify-center rounded-lg text-muted-foreground opacity-0 transition-opacity hover:bg-background hover:text-foreground group-hover:opacity-100"
         @click.stop="openProjectMenuId = openProjectMenuId === project.id ? null : project.id"
       >
-        <Ellipsis :size="16" />
+        <Ellipsis :size="14" />
       </button>
 
       <div
         v-if="openProjectMenuId === project.id && !collapsed"
-        class="absolute right-3 top-12 z-20 w-40 overflow-hidden rounded-xl border border-border bg-popover shadow-soft"
+        class="absolute right-2.5 top-10 z-20 w-36 overflow-hidden rounded-xl border border-border bg-popover shadow-soft"
       >
         <button
           type="button"

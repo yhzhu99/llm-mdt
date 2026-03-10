@@ -81,7 +81,7 @@ const stageStatusLabel = computed(() => {
 
 const stageStatusBadgeClass = computed(() =>
   cn(
-    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium',
+    'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium',
     stageStatus.value === 'running' && 'border-primary/20 bg-primary/10 text-primary',
     stageStatus.value === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700',
     stageStatus.value === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
@@ -112,20 +112,20 @@ const stageStatusBadgeClass = computed(() =>
       </div>
     </template>
 
-    <div class="space-y-4">
+    <div class="space-y-3">
       <div class="flex flex-wrap items-center justify-end gap-2">
         <CopyButton icon-only :title="t('copyFinalResponse')" :get-text="() => responseText" />
         <button
           type="button"
-          class="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+          class="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground"
           @click="showThinking = !showThinking"
         >
           {{ showThinking ? t('stageHideThinking') : t('stageShowThinking') }}
         </button>
       </div>
 
-      <div class="rounded-[1.4rem] border border-border/60 bg-background/70 p-4 sm:p-5">
-        <div class="mb-4 flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+      <div class="rounded-[1.25rem] border border-border/60 bg-background/70 p-4">
+        <div class="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
           <span
             :class="
               cn(
@@ -157,20 +157,20 @@ const stageStatusBadgeClass = computed(() =>
           />
           <div
             v-else-if="props.streamMeta?.status === 'error'"
-            class="rounded-[1rem] border border-destructive/20 bg-destructive/5 px-4 py-5 text-sm text-destructive"
+            class="rounded-[1rem] border border-destructive/20 bg-destructive/5 px-4 py-4 text-sm text-destructive"
           >
             {{ props.streamMeta?.message || t('stageStatusError') }}
           </div>
           <div
             v-else
-            class="rounded-[1rem] border border-dashed border-border/70 bg-muted/20 px-4 py-5 text-sm text-muted-foreground"
+            class="rounded-[1rem] border border-dashed border-border/70 bg-muted/20 px-4 py-4 text-sm text-muted-foreground"
           >
             {{ t('stageWaitingSynthesis') }}
           </div>
         </div>
       </div>
 
-      <div v-if="showThinking" class="rounded-[1.25rem] border border-border/60 bg-muted/20 px-4 py-4">
+      <div v-if="showThinking" class="rounded-[1.05rem] border border-border/60 bg-muted/20 px-4 py-3.5">
         <div class="mb-3 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
           {{ t('stageThinking') }}
         </div>

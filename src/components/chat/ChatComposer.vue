@@ -51,17 +51,27 @@ const canSubmit = computed(
     props.selectedModels.length > 0 &&
     Boolean(input.value.trim()),
 )
+const showRunConfig = computed(() => props.providerConfigured && props.availableModels.length > 0)
+const targetStageLabel = computed(
+  () => stageOptions.value.find((option) => option.key === props.targetStage)?.label || t('stage3Title'),
+)
+const configSummary = computed(() =>
+  t('composerConfigSummary', {
+    stage: targetStageLabel.value,
+    count: props.selectedModels.length,
+  }),
+)
 
 const autosize = () => {
   const textarea = textareaRef.value
   if (!textarea) return
   textarea.style.height = 'auto'
-  textarea.style.height = `${Math.min(textarea.scrollHeight, 280)}px`
+  textarea.style.height = `${Math.min(textarea.scrollHeight, props.centered ? 360 : 280)}px`
 }
 
 watch(input, () => {
   nextTick(() => autosize())
-})
+}, { immediate: true })
 
 const handleSubmit = async () => {
   if (props.disabled || !props.providerConfigured) return
@@ -89,33 +99,55 @@ const isOnlySelectedModel = (model: string) =>
 
 <template>
   <form
-    class="group relative overflow-hidden rounded-[2rem] border border-border/70 bg-card/95 shadow-soft transition-all duration-300 focus-within:border-primary/40 focus-within:shadow-[0_0_0_4px_rgba(59,130,246,0.08)]"
-    :class="centered ? 'mx-auto w-full max-w-3xl' : 'w-full'"
+    class="group relative overflow-hidden rounded-[1.65rem] border border-border/80 bg-card/95 shadow-[0_28px_60px_-46px_rgba(15,23,42,0.48)] transition-all duration-300 focus-within:border-primary/35 focus-within:shadow-[0_0_0_4px_rgba(59,130,246,0.08)]"
+    :class="centered ? 'mx-auto w-full max-w-[72rem]' : 'w-full'"
     @submit.prevent="handleSubmit"
   >
-    <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/5 via-transparent to-transparent" />
+    <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/6 via-transparent to-transparent" />
 
-    <div class="relative p-5 sm:p-6">
+    <div class="relative p-4 sm:p-5">
+      <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+            {{ centered ? t('askCouncilQuestion') : t('conversationQuestionLabel') }}
+          </div>
+          <div class="mt-1 text-sm font-medium text-foreground">
+            {{ providerConfigured ? configSummary : t('providerSetupRequired') }}
+          </div>
+        </div>
+
+        <div
+          v-if="showRunConfig"
+          class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground"
+        >
+          {{ t('composerEnabledModels', { selected: selectedModels.length, total: availableModels.length }) }}
+        </div>
+      </div>
+
       <textarea
         ref="textareaRef"
         v-model="input"
         :disabled="disabled || !providerConfigured"
-        rows="3"
+        :rows="centered ? 6 : 4"
         :placeholder="t('composerPlaceholder')"
-        class="min-h-[148px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70"
+        :class="
+          centered
+            ? 'min-h-[220px] w-full resize-none border-0 bg-transparent text-base leading-8 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70 sm:text-[17px]'
+            : 'min-h-[160px] w-full resize-none border-0 bg-transparent text-[15px] leading-7 text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-70'
+        "
         @keydown="handleKeydown"
       />
 
       <div
-        v-if="providerConfigured && availableModels.length > 0"
-        class="mt-5 space-y-4 rounded-[1.5rem] border border-border/70 bg-background/70 p-4 backdrop-blur"
+        v-if="showRunConfig"
+        class="mt-4 space-y-3 border-t border-border/70 pt-3"
       >
-        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div class="space-y-2">
-            <div class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+        <div class="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
               {{ t('composerRunToStage') }}
             </div>
-            <div class="inline-flex flex-wrap gap-2 rounded-full border border-border/70 bg-card/80 p-1">
+            <div class="inline-flex flex-wrap gap-1 rounded-full border border-border/70 bg-background/80 p-1">
               <button
                 v-for="stage in stageOptions"
                 :key="stage.key"
@@ -123,8 +155,8 @@ const isOnlySelectedModel = (model: string) =>
                 :disabled="disabled"
                 :class="
                   targetStage === stage.key
-                    ? 'rounded-full bg-primary px-4 py-2 text-sm font-medium text-primary-foreground shadow-sm'
-                    : 'rounded-full px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
+                    ? 'rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground shadow-sm'
+                    : 'rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground'
                 "
                 @click="emit('update:target-stage', stage.key)"
               >
@@ -133,10 +165,13 @@ const isOnlySelectedModel = (model: string) =>
             </div>
           </div>
 
-          <div class="flex flex-wrap gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+              {{ t('composerConfigLabel') }}
+            </span>
             <button
               type="button"
-              class="inline-flex items-center rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
+              class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
               :disabled="disabled"
               @click="emit('select-all-models')"
             >
@@ -144,7 +179,7 @@ const isOnlySelectedModel = (model: string) =>
             </button>
             <button
               type="button"
-              class="inline-flex items-center rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
+              class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
               :disabled="disabled"
               @click="emit('reset-run-config')"
             >
@@ -153,54 +188,43 @@ const isOnlySelectedModel = (model: string) =>
           </div>
         </div>
 
-        <div class="space-y-2">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-            {{ t('composerEnabledModels', { selected: selectedModels.length, total: availableModels.length }) }}
-          </div>
-          <div class="flex flex-wrap gap-2">
-            <button
-              v-for="model in availableModels"
-              :key="model"
-              type="button"
-              :title="model"
-              :disabled="disabled || isOnlySelectedModel(model)"
+        <div class="flex flex-wrap gap-2">
+          <button
+            v-for="model in availableModels"
+            :key="model"
+            type="button"
+            :title="model"
+            :disabled="disabled || isOnlySelectedModel(model)"
+            :class="
+              selectedModelSet.has(model)
+                ? 'inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary'
+                : 'inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground'
+            "
+            @click="emit('toggle-model', model)"
+          >
+            <span
               :class="
                 selectedModelSet.has(model)
-                  ? 'inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary'
-                  : 'inline-flex items-center gap-2 rounded-full border border-border/70 bg-card/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground'
+                  ? 'h-2.5 w-2.5 rounded-full bg-primary'
+                  : 'h-2.5 w-2.5 rounded-full bg-muted-foreground/35'
               "
-              @click="emit('toggle-model', model)"
-            >
-              <span
-                :class="
-                  selectedModelSet.has(model)
-                    ? 'h-2.5 w-2.5 rounded-full bg-primary'
-                    : 'h-2.5 w-2.5 rounded-full bg-muted-foreground/35'
-                "
-              />
-              <span>{{ shortModelName(model) }}</span>
-            </button>
-          </div>
+            />
+            <span>{{ shortModelName(model) }}</span>
+          </button>
         </div>
       </div>
 
-      <div class="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div class="space-y-2 text-xs text-muted-foreground">
-          <div class="flex flex-wrap items-center gap-2">
-            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Enter</span>
-            <span>{{ t('composerEnterSend') }}</span>
-            <span>·</span>
-            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Shift</span>
-            <span>+</span>
-            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Enter</span>
-            <span>{{ t('composerNewline') }}</span>
-          </div>
-          <div v-if="isLoading" class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary">
+      <div class="mt-4 flex flex-col gap-3 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
+        <div class="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+          <div
+            v-if="isLoading"
+            class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary"
+          >
             <LoaderCircle :size="12" class="animate-spin" />
             {{ t('composerGenerating') }}
           </div>
           <div v-else-if="!providerConfigured" class="flex flex-wrap items-center gap-2">
-            {{ t('composerProviderHint') }}
+            <span>{{ t('composerProviderHint') }}</span>
             <button
               type="button"
               class="inline-flex items-center gap-1 font-medium text-primary transition-colors hover:text-primary/80"
@@ -210,15 +234,24 @@ const isOnlySelectedModel = (model: string) =>
               {{ t('openSettings') }}
             </button>
           </div>
-          <div v-else class="text-xs text-muted-foreground">
-            {{ t('composerRunConfigHint') }}
+          <div v-else class="truncate">{{ t('composerRunConfigHint') }}</div>
+
+          <div class="inline-flex items-center gap-1.5">
+            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Enter</span>
+            <span>{{ t('composerEnterSend') }}</span>
+          </div>
+          <div class="inline-flex items-center gap-1.5">
+            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Shift</span>
+            <span>+</span>
+            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Enter</span>
+            <span>{{ t('composerNewline') }}</span>
           </div>
         </div>
 
         <Button
           type="submit"
           size="icon"
-          class="h-12 w-12 shrink-0 rounded-2xl"
+          class="h-11 w-11 shrink-0 rounded-xl"
           :aria-label="t('composerSend')"
           :title="t('composerSend')"
           :disabled="!canSubmit"

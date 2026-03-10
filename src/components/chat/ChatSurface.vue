@@ -175,6 +175,11 @@ const stageRank: Record<StageKey, number> = {
 
 const composerAvailableModels = computed(() => props.runtimeConfig?.council_models || [])
 const hasConversationMessages = computed(() => Boolean(props.conversation?.messages?.length))
+const heroHighlights = computed(() => [
+  t('homeFeatureStage1'),
+  t('homeFeatureStage2'),
+  t('homeFeatureStage3'),
+])
 
 const shortModelName = (model: string) => model.split('/')[1] || model
 const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
@@ -471,7 +476,7 @@ const assistantStatusText = (message: AssistantMessage, index: number) => {
 
 const assistantStatusBadgeClass = (status: AssistantStatus) =>
   cn(
-    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium',
+    'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium',
     status === 'running' && 'border-primary/20 bg-primary/10 text-primary',
     status === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700',
     status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
@@ -481,7 +486,7 @@ const assistantStatusBadgeClass = (status: AssistantStatus) =>
 
 const stageSummaryClass = (status: StageStatus) =>
   cn(
-    'inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium',
+    'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium',
     status === 'running' && 'border-primary/20 bg-primary/10 text-primary',
     status === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700',
     status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
@@ -505,7 +510,7 @@ const currentStageIcon = (stage: StageKey) => {
 const runConfigPills = (message: AssistantMessage) => [
   {
     key: 'target-stage',
-    label: `${t('composerRunToStage')} · ${stageTitle(messageTargetStage(message))}`,
+    label: stageTitle(messageTargetStage(message)),
     title: `${t('composerRunToStage')} · ${stageTitle(messageTargetStage(message))}`,
   },
   ...messageCouncilOrder(message).map((model) => ({
@@ -572,27 +577,38 @@ watch(
 </script>
 
 <template>
-  <section class="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.10),_transparent_42%),linear-gradient(180deg,rgba(248,250,252,0.95),rgba(248,250,252,0.75))]">
+  <section class="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top_left,_rgba(37,99,235,0.12),_transparent_32%),linear-gradient(180deg,rgba(248,250,252,0.96),rgba(241,245,249,0.92))]">
     <div
       ref="scrollRootRef"
       data-chat-scroll-root
-      class="scrollbar-hide flex-1 overflow-y-auto px-5 py-6 sm:px-6"
+      class="scrollbar-hide flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5"
     >
-      <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full max-w-5xl items-center justify-center">
-        <div class="w-full max-w-4xl space-y-8">
-          <div class="space-y-4 text-center">
+      <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full w-full max-w-[80rem] items-center">
+        <div class="w-full space-y-8 py-6 sm:py-10">
+          <div class="max-w-3xl space-y-4">
             <div
-              class="mx-auto inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/5 px-4 py-1.5 text-sm font-medium text-primary"
+              class="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
             >
-              <MessageSquareText :size="16" />
-              {{ providerConfigured ? t('browserLocalWorkflow') : t('providerSetupRequired') }}
+              <span
+                :class="providerConfigured ? 'h-2 w-2 rounded-full bg-primary' : 'h-2 w-2 rounded-full bg-muted-foreground/40'"
+              />
+              {{ t('appNameSecondary') }}
             </div>
-            <h2 class="text-4xl font-semibold tracking-tight text-foreground sm:text-5xl">
+            <h2 class="text-4xl font-semibold tracking-[-0.04em] text-foreground sm:text-5xl lg:text-6xl">
               {{ providerConfigured ? t('welcomeTitle') : t('configureBrowserProvider') }}
             </h2>
-            <p class="mx-auto max-w-2xl text-base leading-7 text-muted-foreground">
+            <p class="max-w-2xl text-base leading-7 text-muted-foreground">
               {{ providerConfigured ? t('welcomeDescription') : t('providerSetupDescription') }}
             </p>
+            <div class="flex flex-wrap gap-2 pt-1">
+              <span
+                v-for="highlight in heroHighlights"
+                :key="highlight"
+                class="inline-flex items-center rounded-full border border-border/70 bg-background/75 px-3 py-1.5 text-xs font-medium text-muted-foreground"
+              >
+                {{ highlight }}
+              </span>
+            </div>
           </div>
 
           <ChatComposer
@@ -612,10 +628,10 @@ watch(
             @update:target-stage="handleTargetStageChange"
           />
 
-          <div v-if="!providerConfigured" class="flex justify-center">
+          <div v-if="!providerConfigured" class="flex">
             <button
               type="button"
-              class="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-3 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+              class="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground"
               @click="emit('open-settings')"
             >
               <Settings2 :size="16" />
@@ -627,9 +643,9 @@ watch(
 
       <div
         v-else-if="conversation"
-        class="mx-auto grid w-full max-w-[92rem] gap-6 lg:grid-cols-[minmax(0,1fr)_14.5rem] lg:gap-8"
+        class="mx-auto grid w-full max-w-[96rem] gap-5 lg:grid-cols-[minmax(0,1fr)_13rem] lg:gap-6"
       >
-        <div class="min-w-0 space-y-7">
+        <div class="min-w-0 space-y-6">
           <div
             v-if="latestAssistantEntry"
             class="lg:hidden"
@@ -649,7 +665,7 @@ watch(
             v-if="isRecovering || canRetryRecovery"
             :class="
               cn(
-                'flex flex-wrap items-center justify-between gap-3 rounded-2xl border px-4 py-3 text-sm',
+                'flex flex-wrap items-center justify-between gap-3 rounded-[1.25rem] border px-4 py-3 text-sm',
                 isRecovering
                   ? 'border-primary/20 bg-primary/5 text-primary'
                   : 'border-destructive/20 bg-destructive/5 text-destructive',
@@ -681,19 +697,19 @@ watch(
           <div v-for="(message, index) in conversation.messages" :key="message.id || index" class="space-y-4">
             <div
               v-if="message.role === 'user'"
-              class="ml-auto max-w-[56rem] rounded-[1.75rem] border border-primary/15 bg-gradient-to-br from-card to-primary/[0.03] shadow-sm"
+              class="ml-auto max-w-[58rem] rounded-[1.5rem] border border-primary/15 bg-gradient-to-br from-card to-primary/[0.03] shadow-sm"
             >
-              <div class="flex items-center justify-between gap-3 border-b border-border/70 px-5 py-4">
+              <div class="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
                 <div>
                   <div class="text-sm font-semibold text-foreground">{{ t('messageYou') }}</div>
-                  <div class="text-sm text-muted-foreground">{{ t('conversationQuestionLabel') }}</div>
+                  <div class="text-xs text-muted-foreground">{{ t('conversationQuestionLabel') }}</div>
                 </div>
                 <div class="flex items-center gap-1">
                   <Button
                     v-if="isLatestUserMessage(index)"
                     size="sm"
                     variant="ghost"
-                    class="rounded-full px-3"
+                    class="h-8 rounded-full px-3"
                     :disabled="isLoading"
                     @click="isEditingLatestPrompt ? cancelEditingLatestPrompt() : startEditingLatestPrompt()"
                   >
@@ -707,21 +723,21 @@ watch(
                   />
                 </div>
               </div>
-              <div class="px-5 py-5">
+              <div class="px-4 py-4">
                 <div v-if="isLatestUserMessage(index) && isEditingLatestPrompt" class="space-y-4">
                   <textarea
                     ref="editTextareaRef"
                     v-model="editingPrompt"
                     rows="4"
                     :placeholder="t('composerPlaceholder')"
-                    class="min-h-[148px] w-full resize-none rounded-[1.4rem] border border-border/70 bg-background/80 px-4 py-3 text-[15px] leading-7 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/35"
+                    class="min-h-[132px] w-full resize-none rounded-[1.2rem] border border-border/70 bg-background/80 px-4 py-3 text-[15px] leading-7 text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary/35"
                     @input="autosizeEditTextarea"
                     @keydown="handleEditKeydown"
                   />
                   <div class="flex justify-end gap-2">
                     <Button
                       size="sm"
-                      class="rounded-full px-4"
+                      class="h-9 rounded-full px-4"
                       :disabled="isLoading || !editingPrompt.trim()"
                       @click="handleRerun"
                     >
@@ -733,10 +749,10 @@ watch(
               </div>
             </div>
 
-            <div v-else class="min-w-0 space-y-5">
-              <div class="rounded-[1.45rem] border border-border/65 bg-background/60 px-5 py-4 shadow-[0_18px_50px_-38px_rgba(15,23,42,0.35)] backdrop-blur">
+            <div v-else class="min-w-0 space-y-4">
+              <div class="rounded-[1.3rem] border border-border/65 bg-background/65 px-4 py-3.5 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.34)] backdrop-blur">
                 <div class="flex flex-wrap items-start justify-between gap-4">
-                  <div class="space-y-2">
+                  <div class="space-y-1.5">
                     <div class="flex flex-wrap items-center gap-3">
                       <div class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
                         <MessageSquareText :size="16" class="text-primary" />
@@ -757,7 +773,7 @@ watch(
                         {{ assistantStatusText(message as AssistantMessage, index) }}
                       </div>
                     </div>
-                    <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div class="flex items-center gap-2 text-xs text-muted-foreground">
                       <component :is="currentStageIcon(assistantCurrentStage(message as AssistantMessage, index))" :size="14" />
                       <span>{{ t('assistantSubtitle') }}</span>
                     </div>
@@ -766,7 +782,7 @@ watch(
                         v-for="pill in runConfigPills(message as AssistantMessage)"
                         :key="pill.key"
                         :title="pill.title"
-                        class="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground"
+                        class="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
                       >
                         {{ pill.label }}
                       </span>
@@ -778,7 +794,7 @@ watch(
                       v-if="isLatestAssistantMessage(index) && runStatus === 'running'"
                       size="sm"
                       variant="outline"
-                      class="rounded-full"
+                      class="h-8 rounded-full px-3"
                       @click="emit('stop')"
                     >
                       <Square :size="14" />
@@ -805,7 +821,7 @@ watch(
                   v-if="
                     !((message as AssistantMessage).stage1 || Object.keys((message as AssistantMessage).stream?.stage1 || {}).length)
                   "
-                  class="rounded-[1.6rem] border border-dashed border-border/70 bg-background/60 px-5 py-5"
+                  class="rounded-[1.3rem] border border-dashed border-border/70 bg-background/60 px-4 py-4"
                 >
                   <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <LoaderCircle
@@ -835,7 +851,7 @@ watch(
                   v-if="
                     !((message as AssistantMessage).stage2 || Object.keys((message as AssistantMessage).stream?.stage2 || {}).length)
                   "
-                  class="rounded-[1.6rem] border border-dashed border-border/70 bg-background/60 px-5 py-5"
+                  class="rounded-[1.3rem] border border-dashed border-border/70 bg-background/60 px-4 py-4"
                 >
                   <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <LoaderCircle
@@ -872,7 +888,7 @@ watch(
                       (message as AssistantMessage).streamMeta?.stage3?.status === 'error'
                     )
                   "
-                  class="rounded-[1.6rem] border border-dashed border-border/70 bg-background/60 px-5 py-5"
+                  class="rounded-[1.3rem] border border-dashed border-border/70 bg-background/60 px-4 py-4"
                 >
                   <div class="inline-flex items-center gap-2 text-sm font-medium text-muted-foreground">
                     <LoaderCircle

@@ -28,38 +28,48 @@ const { locale, t } = useI18n()
 </script>
 
 <template>
-  <header class="sticky top-0 z-20 border-b border-border/80 bg-background/90 backdrop-blur">
-    <div class="flex items-center justify-between gap-4 px-5 py-4 sm:px-6">
+  <header class="sticky top-0 z-20 border-b border-border/80 bg-background/80 backdrop-blur-xl">
+    <div class="flex items-center justify-between gap-3 px-4 py-3 sm:px-5">
       <div class="flex min-w-0 items-center gap-3">
         <div
           :class="
             cn(
-              'flex h-10 w-10 items-center justify-center rounded-xl border border-border/70 bg-muted/40',
+              'flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card/80 shadow-sm',
               status === 'running' && 'bg-primary/10 text-primary',
               status === 'ready' && 'bg-emerald-500/10 text-emerald-600',
               status === 'error' && 'bg-destructive/10 text-destructive',
             )
           "
         >
-          <Activity :size="18" />
+          <Activity :size="16" />
         </div>
         <div class="min-w-0">
-          <div class="truncate text-base font-semibold text-foreground">{{ title || t('appNamePrimary') }}</div>
-          <div class="truncate text-sm text-muted-foreground">
-            {{ statusText || status }}
+          <div class="truncate text-sm font-semibold text-foreground">{{ title || t('appNamePrimary') }}</div>
+          <div class="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+            <span
+              :class="
+                cn(
+                  'h-2 w-2 rounded-full bg-muted-foreground/35',
+                  status === 'running' && 'animate-pulse bg-primary',
+                  status === 'ready' && 'bg-emerald-500',
+                  status === 'error' && 'bg-destructive',
+                )
+              "
+            />
+            <span class="truncate">{{ statusText || status }}</span>
           </div>
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
-        <div class="hidden items-center gap-1 rounded-xl border border-border/80 bg-card/80 p-1 sm:flex">
-          <span class="inline-flex items-center gap-1 px-2 text-xs font-medium text-muted-foreground">
+      <div class="flex items-center gap-1.5">
+        <div class="hidden items-center gap-1 rounded-full border border-border/80 bg-card/80 p-1 sm:flex">
+          <span class="inline-flex items-center gap-1 px-2 text-[11px] font-medium text-muted-foreground">
             <Languages :size="14" />
             {{ t('topBarLanguage') }}
           </span>
           <button
             type="button"
-            class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+            class="rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors"
             :class="
               locale === 'zh-CN'
                 ? 'bg-primary text-primary-foreground'
@@ -71,7 +81,7 @@ const { locale, t } = useI18n()
           </button>
           <button
             type="button"
-            class="rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors"
+            class="rounded-full px-2.5 py-1.5 text-xs font-medium transition-colors"
             :class="
               locale === 'en'
                 ? 'bg-primary text-primary-foreground'
@@ -83,11 +93,11 @@ const { locale, t } = useI18n()
           </button>
         </div>
 
-        <Button variant="ghost" size="sm" @click="$emit('open-settings')">
+        <Button variant="ghost" size="sm" class="h-9 rounded-xl px-3" @click="$emit('open-settings')">
           <Settings2 :size="16" />
           <span class="hidden sm:inline">{{ t('topBarSettings') }}</span>
         </Button>
-        <Button size="sm" @click="$emit('new-conversation')">
+        <Button size="sm" class="h-9 rounded-xl px-3.5" @click="$emit('new-conversation')">
           <Plus :size="16" />
           <span class="hidden sm:inline">{{ t('topBarNewChat') }}</span>
         </Button>

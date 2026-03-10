@@ -68,7 +68,7 @@ const handleCopy = async () => {
       :aria-label="title || labelText"
       :class="
         cn(
-          'inline-flex items-center gap-2 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground',
+          'inline-flex items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-accent-foreground',
           iconOnly && 'h-8 w-8 justify-center px-0 py-0',
         )
       "
