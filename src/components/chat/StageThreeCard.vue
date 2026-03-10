@@ -108,7 +108,6 @@ const stageStatusBadgeClass = computed(() =>
           )"
         />
         <span>{{ stageStatusLabel }}</span>
-        <span class="text-current/80">· {{ shortModelName }}</span>
       </div>
     </template>
 

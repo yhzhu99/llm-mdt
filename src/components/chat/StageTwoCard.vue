@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowDownWideNarrow, LoaderCircle, Scale } from 'lucide-vue-next'
+import { ArrowDownWideNarrow, LoaderCircle } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
@@ -175,7 +175,6 @@ const selectModel = (index: number) => {
           )"
         />
         <span>{{ stageStatusLabel }}</span>
-        <span v-if="activeModel" class="text-current/80">· {{ shortModelName(activeModel) }}</span>
       </div>
     </template>
 
@@ -223,21 +222,6 @@ const selectModel = (index: number) => {
       </div>
 
       <div class="rounded-[1.25rem] border border-border/60 bg-background/70 p-4">
-        <div class="mb-3 flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-          <span
-            :class="
-              cn(
-                'h-2.5 w-2.5 rounded-full bg-muted-foreground/35',
-                modelStatus(activeModel) === 'running' && 'bg-primary animate-pulse',
-                modelStatus(activeModel) === 'complete' && 'bg-emerald-500',
-                modelStatus(activeModel) === 'error' && 'bg-destructive',
-              )
-            "
-          />
-          <Scale :size="16" class="text-primary" />
-          <span>{{ shortModelName(activeModel) }}</span>
-        </div>
-
         <div class="space-y-4">
           <div
             v-if="isThinking(activeModel)"

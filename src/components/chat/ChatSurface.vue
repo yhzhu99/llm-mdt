@@ -309,6 +309,11 @@ const handleEditKeydown = (event: KeyboardEvent) => {
 const isLatestUserMessage = (index: number) => latestUserEntry.value?.index === index
 const isLatestAssistantMessage = (index: number) => latestAssistantEntry.value?.index === index
 const stageSectionId = (messageId: string | undefined, stage: StageKey) => `${messageId || 'assistant'}-${stage}`
+const stageSummaryLabel = (stage: StageKey) => {
+  if (stage === 'stage1') return `${t('stage1Title')} · ${t('stage1Subtitle')}`
+  if (stage === 'stage2') return `${t('stage2Title')} · ${t('stage2Subtitle')}`
+  return `${t('stage3Title')} · ${t('stage3Subtitle')}`
+}
 
 const stageStatusFromModelMeta = (
   meta: Record<string, { status: 'idle' | 'running' | 'complete' | 'error'; message?: string }> | undefined,
@@ -563,19 +568,18 @@ watch(
           <div v-for="(message, index) in conversation.messages" :key="message.id || index" class="space-y-4">
             <div
               v-if="message.role === 'user'"
-              class="ml-auto max-w-[58rem] rounded-[1.5rem] border border-primary/15 bg-gradient-to-br from-card to-primary/[0.03] shadow-sm"
+              class="ml-auto max-w-[58rem] rounded-[1.5rem] border border-primary/15 bg-gradient-to-br from-card via-card to-primary/[0.035] shadow-sm"
             >
-              <div class="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3.5">
-                <div>
-                  <div class="text-sm font-semibold text-foreground">{{ t('messageYou') }}</div>
-                  <div class="text-xs text-muted-foreground">{{ t('conversationQuestionLabel') }}</div>
+              <div class="flex items-center justify-between gap-3 px-3 pt-3">
+                <div class="inline-flex items-center rounded-full border border-primary/15 bg-primary/[0.06] px-2.5 py-1 text-[11px] font-medium text-primary/80">
+                  {{ t('conversationQuestionLabel') }}
                 </div>
                 <div class="flex items-center gap-1">
                   <Button
                     v-if="isLatestUserMessage(index)"
                     size="sm"
                     variant="ghost"
-                    class="h-8 rounded-full px-3"
+                    class="h-8 rounded-full px-3 text-muted-foreground hover:text-foreground"
                     :disabled="isLoading"
                     @click="isEditingLatestPrompt ? cancelEditingLatestPrompt() : startEditingLatestPrompt()"
                   >
@@ -589,7 +593,7 @@ watch(
                   />
                 </div>
               </div>
-              <div class="px-4 py-4">
+              <div class="px-4 pb-4 pt-2">
                 <div v-if="isLatestUserMessage(index) && isEditingLatestPrompt" class="space-y-4">
                   <textarea
                     ref="editTextareaRef"
@@ -645,7 +649,7 @@ watch(
                       :size="16"
                       class="animate-spin"
                     />
-                    {{ t('stage1Subtitle') }}
+                    {{ stageSummaryLabel('stage1') }}
                   </div>
                 </div>
 
@@ -675,7 +679,7 @@ watch(
                       :size="16"
                       class="animate-spin"
                     />
-                    {{ (message as AssistantMessage).loading?.stage2 ? t('stage2Subtitle') : t('stageWaitingRanking') }}
+                    {{ (message as AssistantMessage).loading?.stage2 ? stageSummaryLabel('stage2') : t('stageWaitingRanking') }}
                   </div>
                 </div>
 
@@ -712,7 +716,7 @@ watch(
                       :size="16"
                       class="animate-spin"
                     />
-                    {{ (message as AssistantMessage).loading?.stage3 ? t('stage3Subtitle') : t('stageWaitingSynthesis') }}
+                    {{ (message as AssistantMessage).loading?.stage3 ? stageSummaryLabel('stage3') : t('stageWaitingSynthesis') }}
                   </div>
                 </div>
 
