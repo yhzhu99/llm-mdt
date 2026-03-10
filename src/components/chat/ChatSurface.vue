@@ -579,14 +579,11 @@ watch(
       class="scrollbar-hide flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5"
     >
       <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full w-full max-w-[80rem] items-center">
-        <div class="w-full space-y-6 py-6 sm:py-10">
-          <div class="max-w-3xl space-y-3">
-            <h2 class="text-4xl font-semibold tracking-[-0.04em] text-foreground sm:text-5xl lg:text-6xl">
+        <div class="w-full space-y-5 py-6 sm:py-10">
+          <div class="space-y-2">
+            <h2 class="text-[clamp(2.25rem,4.4vw,4.5rem)] font-semibold tracking-[-0.05em] text-foreground lg:whitespace-nowrap">
               {{ providerConfigured ? t('welcomeTitle') : t('configureBrowserProvider') }}
             </h2>
-            <p class="max-w-2xl text-base leading-7 text-muted-foreground">
-              {{ providerConfigured ? t('welcomeDescription') : t('providerSetupDescription') }}
-            </p>
           </div>
 
           <ChatComposer
