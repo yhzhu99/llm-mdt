@@ -16,6 +16,7 @@ const {
   currentConversationRecovering,
   currentConversationRunState,
   currentConversationRunning,
+  currentChatRunPreferences,
   currentProjectId,
   draftMessage,
   groupedConversations,
@@ -39,14 +40,18 @@ const {
   openSettings,
   renameConversation,
   renameProject,
+  resetChatRunPreferences,
   retryConversationRecovery,
   rerunConversation,
   saveSettings,
   selectConversation,
+  selectAllChatCouncilModels,
   selectProject,
   sendMessage,
   setLocale,
+  setChatTargetStage,
   stopConversation,
+  toggleChatCouncilModel,
   t,
   toggleSidebar,
 } = useMdtApp()
@@ -93,6 +98,7 @@ const topBarTitle = computed(() => {
 
       <ChatSurface
         v-model:draft="draftMessage"
+        :chat-run-preferences="currentChatRunPreferences"
         :conversation="currentConversation"
         :can-retry-recovery="currentConversationCanRetryRecovery"
         :is-loading="currentConversationRunning"
@@ -103,10 +109,14 @@ const topBarTitle = computed(() => {
         :runtime-config="runtimeConfig"
         @new-conversation="newConversation"
         @open-settings="openSettings"
+        @reset-run-config="resetChatRunPreferences"
         @rerun="rerunConversation"
         @retry-recovery="retryConversationRecovery"
         @send="sendMessage"
+        @select-all-models="selectAllChatCouncilModels"
         @stop="stopConversation"
+        @toggle-model="toggleChatCouncilModel"
+        @update-target-stage="setChatTargetStage"
       />
     </div>
 

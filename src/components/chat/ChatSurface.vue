@@ -86,6 +86,11 @@ interface AssistantMessage extends ConversationMessageBase {
     stage2?: boolean
     stage3?: boolean
   }
+  runConfig?: {
+    targetStage: StageKey
+    councilModels: string[]
+    chairmanModel: string
+  } | null
 }
 
 interface ConversationDetail {
@@ -108,6 +113,10 @@ const props = withDefaults(
   defineProps<{
     conversation?: ConversationDetail | null
     draft?: string
+    chatRunPreferences?: {
+      targetStage: StageKey
+      selectedCouncilModels: string[]
+    }
     canRetryRecovery?: boolean
     isLoading?: boolean
     isRecovering?: boolean
@@ -119,6 +128,10 @@ const props = withDefaults(
   {
     conversation: null,
     draft: '',
+    chatRunPreferences: () => ({
+      targetStage: 'stage3' as const,
+      selectedCouncilModels: [] as string[],
+    }),
     canRetryRecovery: false,
     isLoading: false,
     isRecovering: false,
@@ -131,6 +144,10 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   (event: 'update:draft', value: string): void
+  (event: 'update-target-stage', value: StageKey): void
+  (event: 'toggle-model', model: string): void
+  (event: 'select-all-models'): void
+  (event: 'reset-run-config'): void
   (event: 'send', value: string): void
   (event: 'new-conversation'): void
   (event: 'open-settings'): void
@@ -150,8 +167,25 @@ const draftValue = computed({
   set: (value: string) => emit('update:draft', value),
 })
 
-const councilOrder = computed(() => props.runtimeConfig?.council_models || [])
+const stageRank: Record<StageKey, number> = {
+  stage1: 1,
+  stage2: 2,
+  stage3: 3,
+}
+
+const composerAvailableModels = computed(() => props.runtimeConfig?.council_models || [])
 const hasConversationMessages = computed(() => Boolean(props.conversation?.messages?.length))
+
+const shortModelName = (model: string) => model.split('/')[1] || model
+const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
+const messageCouncilOrder = (message: AssistantMessage) =>
+  message.runConfig?.councilModels?.length ? message.runConfig.councilModels : props.runtimeConfig?.council_models || []
+const messageChairmanModel = (message: AssistantMessage) =>
+  message.runConfig?.chairmanModel || props.runtimeConfig?.chairman_model || 'chairman'
+const stageEnabledForMessage = (message: AssistantMessage, stage: StageKey) =>
+  stageRank[stage] <= stageRank[messageTargetStage(message)]
+const visibleStagesForMessage = (message: AssistantMessage) =>
+  (['stage1', 'stage2', 'stage3'] as StageKey[]).filter((stage) => stageEnabledForMessage(message, stage))
 
 const latestAssistantFingerprint = computed(() => {
   const messages = props.conversation?.messages || []
@@ -181,6 +215,8 @@ const latestAssistantFingerprint = computed(() => {
 
   return [
     latestAssistant.id,
+    latestAssistant.runConfig?.targetStage || 'stage3',
+    (latestAssistant.runConfig?.councilModels || []).join('|'),
     latestAssistant.stage1?.length || 0,
     latestAssistant.stage2?.length || 0,
     latestAssistant.stage3?.response.length || 0,
@@ -223,6 +259,10 @@ const latestUserEntry = computed(() => {
 })
 
 const handleSend = (value: string) => emit('send', value)
+const handleTargetStageChange = (value: StageKey) => emit('update-target-stage', value)
+const handleToggleModel = (model: string) => emit('toggle-model', model)
+const handleSelectAllModels = () => emit('select-all-models')
+const handleResetRunConfig = () => emit('reset-run-config')
 const autosizeEditTextarea = () => {
   const textarea = editTextareaRef.value
   if (!textarea) return
@@ -269,9 +309,17 @@ const tracePayloadForMessage = (message: AssistantMessage) => {
     payload.ranking = message.metadata
   }
 
+  if (message.runConfig) {
+    payload.run_config = {
+      target_stage: message.runConfig.targetStage,
+      council_models: message.runConfig.councilModels,
+      chairman_model: message.runConfig.chairmanModel,
+    }
+  }
+
   if (message.stage3?.diagnostics || message.stage3 || message.streamMeta?.stage3?.status === 'error') {
     payload.stage3 = {
-      model: message.stage3?.model || props.runtimeConfig?.chairman_model || 'chairman',
+      model: message.stage3?.model || messageChairmanModel(message),
       reasoning_available: Boolean(message.stage3?.reasoning_details || message.stream?.stage3?.thinking),
       diagnostics: message.stage3?.diagnostics || null,
       stream_status: message.streamMeta?.stage3?.status || 'idle',
@@ -311,6 +359,8 @@ const stageStatusFromModelMeta = (
 }
 
 const hasStageSection = (message: AssistantMessage, stage: StageKey) => {
+  if (!stageEnabledForMessage(message, stage)) return false
+
   if (stage === 'stage1') {
     return Boolean(message.loading?.stage1 || message.stage1?.length || Object.keys(message.stream?.stage1 || {}).length)
   }
@@ -329,7 +379,7 @@ const hasStageSection = (message: AssistantMessage, stage: StageKey) => {
 }
 
 const shouldRenderStageSection = (message: AssistantMessage, index: number, stage: StageKey) =>
-  hasStageSection(message, stage) || isAssistantActiveTurn(index)
+  stageEnabledForMessage(message, stage) && (hasStageSection(message, stage) || isAssistantActiveTurn(index))
 
 const baseStageStatuses = (message: AssistantMessage): Record<StageKey, StageStatus> => ({
   stage1: stageStatusFromModelMeta(
@@ -382,32 +432,38 @@ const isAssistantStreaming = (message: AssistantMessage, index: number) => {
 
 const assistantCurrentStage = (message: AssistantMessage, index: number): StageKey => {
   const statuses = stageStatuses(message, index)
+  const visibleStages = visibleStagesForMessage(message)
 
-  if (statuses.stage3 === 'running') return 'stage3'
-  if (statuses.stage2 === 'running') return 'stage2'
-  if (statuses.stage1 === 'running') return 'stage1'
-  if (statuses.stage3 !== 'waiting') return 'stage3'
-  if (statuses.stage2 !== 'waiting') return 'stage2'
-  return 'stage1'
+  for (const stage of [...visibleStages].reverse()) {
+    if (statuses[stage] === 'running') return stage
+  }
+
+  for (const stage of [...visibleStages].reverse()) {
+    if (statuses[stage] !== 'waiting') return stage
+  }
+
+  return visibleStages[0] || 'stage1'
 }
 
 const assistantOverallStatus = (message: AssistantMessage, index: number): AssistantStatus => {
   const statuses = stageStatuses(message, index)
+  const visibleStages = visibleStagesForMessage(message)
+  const targetStage = messageTargetStage(message)
 
   if (props.runStatus === 'stopped' && isLatestAssistantMessage(index)) return 'stopped'
   if (isAssistantStreaming(message, index)) return 'running'
-  if (statuses.stage3 === 'complete') return 'complete'
-  if (statuses.stage3 === 'error' || Object.values(statuses).every((status) => status === 'error')) return 'error'
-  if (Object.values(statuses).some((status) => status === 'error') && !message.stage3) return 'error'
+  if (statuses[targetStage] === 'complete') return 'complete'
+  if (visibleStages.some((stage) => statuses[stage] === 'error')) return 'error'
   return assistantCurrentStage(message, index) === 'stage1' && statuses.stage1 === 'waiting' ? 'waiting' : statuses[assistantCurrentStage(message, index)]
 }
 
 const assistantStatusText = (message: AssistantMessage, index: number) => {
   const status = assistantOverallStatus(message, index)
   const currentStage = assistantCurrentStage(message, index)
+  const targetStage = messageTargetStage(message)
 
   if (status === 'running') return `${t('streaming')} · ${stageTitle(currentStage)}`
-  if (status === 'complete') return `${t('stageStatusComplete')} · ${stageTitle('stage3')}`
+  if (status === 'complete') return `${t('stageStatusComplete')} · ${stageTitle(targetStage)}`
   if (status === 'error') return `${t('stageStatusError')} · ${stageTitle(currentStage)}`
   if (status === 'stopped') return `${t('stageStatusStopped')} · ${stageTitle(currentStage)}`
   return stageTitle(currentStage)
@@ -445,6 +501,19 @@ const currentStageIcon = (stage: StageKey) => {
   if (stage === 'stage2') return Scale
   return Crown
 }
+
+const runConfigPills = (message: AssistantMessage) => [
+  {
+    key: 'target-stage',
+    label: `${t('composerRunToStage')} · ${stageTitle(messageTargetStage(message))}`,
+    title: `${t('composerRunToStage')} · ${stageTitle(messageTargetStage(message))}`,
+  },
+  ...messageCouncilOrder(message).map((model) => ({
+    key: model,
+    label: shortModelName(model),
+    title: model,
+  })),
+]
 
 const isNearBottom = () => {
   const root = scrollRootRef.value
@@ -531,9 +600,16 @@ watch(
             centered
             :disabled="isLoading"
             :is-loading="isLoading"
+            :target-stage="chatRunPreferences.targetStage"
+            :selected-models="chatRunPreferences.selectedCouncilModels"
+            :available-models="composerAvailableModels"
             :provider-configured="providerConfigured"
             @open-settings="emit('open-settings')"
             @send="handleSend"
+            @reset-run-config="handleResetRunConfig"
+            @select-all-models="handleSelectAllModels"
+            @toggle-model="handleToggleModel"
+            @update:target-stage="handleTargetStageChange"
           />
 
           <div v-if="!providerConfigured" class="flex justify-center">
@@ -685,6 +761,16 @@ watch(
                       <component :is="currentStageIcon(assistantCurrentStage(message as AssistantMessage, index))" :size="14" />
                       <span>{{ t('assistantSubtitle') }}</span>
                     </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span
+                        v-for="pill in runConfigPills(message as AssistantMessage)"
+                        :key="pill.key"
+                        :title="pill.title"
+                        class="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-3 py-1 text-xs font-medium text-muted-foreground"
+                      >
+                        {{ pill.label }}
+                      </span>
+                    </div>
                   </div>
 
                   <div class="flex flex-wrap items-center justify-end gap-2">
@@ -699,7 +785,7 @@ watch(
                       {{ t('conversationStop') }}
                     </Button>
                     <span
-                      v-for="stage in ['stage1', 'stage2', 'stage3']"
+                      v-for="stage in visibleStagesForMessage(message as AssistantMessage)"
                       :key="stage"
                       :class="stageSummaryClass(stageStatuses(message as AssistantMessage, index)[stage as StageKey])"
                     >
@@ -736,7 +822,7 @@ watch(
                   :responses="(message as AssistantMessage).stage1 || []"
                   :stream-state="(message as AssistantMessage).stream?.stage1"
                   :stream-meta="(message as AssistantMessage).streamMeta?.stage1"
-                  :council-order="councilOrder"
+                  :council-order="messageCouncilOrder(message as AssistantMessage)"
                 />
               </section>
 
@@ -768,7 +854,7 @@ watch(
                   :aggregate-rankings="(message as AssistantMessage).metadata?.aggregate_rankings"
                   :stream-state="(message as AssistantMessage).stream?.stage2"
                   :stream-meta="(message as AssistantMessage).streamMeta?.stage2"
-                  :council-order="councilOrder"
+                  :council-order="messageCouncilOrder(message as AssistantMessage)"
                 />
               </section>
 

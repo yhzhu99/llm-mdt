@@ -3,6 +3,7 @@ export type StreamDeltaType = 'content' | 'reasoning'
 export type StreamStatus = 'idle' | 'running' | 'complete' | 'error'
 export type AppLocale = 'zh-CN' | 'en'
 export type ConversationRunStage = 'stage1' | 'stage2' | 'stage3' | null
+export type MdtTargetStage = Exclude<ConversationRunStage, null>
 export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stopped'
 export type RequestMode = 'responses' | 'chat-completions'
 export type ProviderRequestMode = 'auto' | RequestMode
@@ -56,10 +57,23 @@ export interface RuntimeConfig {
   request_mode: ProviderRequestMode
 }
 
+export interface ChatRunPreferences {
+  targetStage: MdtTargetStage
+  selectedCouncilModels: string[]
+}
+
+export interface MdtRunConfig {
+  targetStage: MdtTargetStage
+  councilModels: string[]
+  chairmanModel: string
+}
+
 export interface AppPreferences {
   locale: AppLocale
   lastProjectId?: string | null
   lastConversationId?: string | null
+  chatTargetStage?: MdtTargetStage
+  chatSelectedCouncilModels?: string[]
 }
 
 export interface Project {
@@ -175,6 +189,7 @@ export interface AssistantConversationMessage {
   stage2: Stage2Result[] | null
   stage3: Stage3Result | null
   metadata: RankingMetadata | null
+  runConfig?: MdtRunConfig | null
   created_at?: string
   stream?: AssistantStreamState
   streamMeta?: AssistantStreamMeta
@@ -211,6 +226,7 @@ export interface PersistedConversationRun {
   userMessageId: string
   content: string
   locale: AppLocale
+  runConfig?: MdtRunConfig
   shouldGenerateTitle: boolean
   startedAt: string
   updatedAt: string
@@ -225,6 +241,7 @@ export interface AssistantMessageRecord {
   stage2?: Stage2Result[]
   stage3?: Stage3Result | null
   metadata?: RankingMetadata | null
+  runConfig?: MdtRunConfig | null
   created_at?: string
 }
 
@@ -243,6 +260,7 @@ export interface MdtRunPersistenceOptions {
   shouldGenerateTitle?: boolean
   assistantMessageId?: string
   assistantMessageCreatedAt?: string
+  runConfig?: MdtRunConfig
 }
 
 export interface MdtRunOptions extends MdtRunPersistenceOptions {

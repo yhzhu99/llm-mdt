@@ -1,5 +1,13 @@
 import { translate } from '@/i18n'
-import type { AppLocale, ConversationSummary, ProviderSettings, RuntimeConfig } from '@/types'
+import type {
+  AppLocale,
+  ChatRunPreferences,
+  ConversationSummary,
+  MdtRunConfig,
+  MdtTargetStage,
+  ProviderSettings,
+  RuntimeConfig,
+} from '@/types'
 
 const normalizeDateKey = (iso: string) => {
   const date = new Date(iso)
@@ -26,6 +34,71 @@ const getRelativeLabel = (iso: string, locale: AppLocale) => {
   if (targetKey === normalizeDateKey(yesterday.toISOString())) return translate(locale, 'dateYesterday')
 
   return dateFormatter.format(date)
+}
+
+const uniqueModels = (models: string[]) => [...new Set((models || []).map((model) => String(model || '').trim()).filter(Boolean))]
+
+const stageRank: Record<MdtTargetStage, number> = {
+  stage1: 1,
+  stage2: 2,
+  stage3: 3,
+}
+
+export function normalizeTargetStage(value: unknown): MdtTargetStage {
+  return value === 'stage1' || value === 'stage2' ? value : 'stage3'
+}
+
+export function reconcileSelectedCouncilModels(selectedModels: string[] | null | undefined, availableModels: string[]) {
+  const available = uniqueModels(availableModels || [])
+  if (available.length === 0) return []
+  if (selectedModels == null) return available
+
+  const availableSet = new Set(available)
+  const selected = uniqueModels(selectedModels).filter((model) => availableSet.has(model))
+  return selected.length > 0 ? selected : available
+}
+
+export function reconcileChatRunPreferences(
+  input: Partial<ChatRunPreferences> | null | undefined,
+  availableModels: string[],
+): ChatRunPreferences {
+  return {
+    targetStage: normalizeTargetStage(input?.targetStage),
+    selectedCouncilModels: reconcileSelectedCouncilModels(input?.selectedCouncilModels, availableModels),
+  }
+}
+
+export function createRunConfig(
+  settings: Pick<ProviderSettings, 'councilModels' | 'chairmanModel'> | null | undefined,
+  input?: Partial<ChatRunPreferences> | Partial<MdtRunConfig> | null,
+): MdtRunConfig {
+  if (input && 'councilModels' in input) {
+    return {
+      targetStage: normalizeTargetStage(input.targetStage),
+      councilModels: uniqueModels(input.councilModels || []),
+      chairmanModel: String(input.chairmanModel || settings?.chairmanModel || '').trim(),
+    }
+  }
+
+  const availableModels = uniqueModels(settings?.councilModels || [])
+  const reconciled = reconcileChatRunPreferences(
+    {
+      targetStage: input?.targetStage,
+      selectedCouncilModels:
+        input && 'selectedCouncilModels' in input ? input.selectedCouncilModels ?? availableModels : availableModels,
+    },
+    availableModels,
+  )
+
+  return {
+    targetStage: reconciled.targetStage,
+    councilModels: reconciled.selectedCouncilModels,
+    chairmanModel: String(settings?.chairmanModel || '').trim(),
+  }
+}
+
+export function stageIncludes(targetStage: MdtTargetStage, stage: MdtTargetStage) {
+  return stageRank[stage] <= stageRank[targetStage]
 }
 
 export function groupConversationsByDate(conversations: ConversationSummary[], locale: AppLocale) {

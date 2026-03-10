@@ -6,9 +6,12 @@ import type {
   AssistantLoadingState,
   AssistantStreamMeta,
   AssistantStreamState,
+  AppPreferences,
+  ChatRunPreferences,
   Conversation,
   ConversationRunState,
   ConversationSummary,
+  MdtRunConfig,
   PersistedConversationRun,
   ProjectSummary,
   ProviderSettings,
@@ -20,7 +23,13 @@ import type {
   StreamStatusMeta,
 } from '@/types'
 import { isAbortError } from '@/utils'
-import { getProviderStatusText, groupConversationsByDate, toRuntimeConfig } from '@/utils/conversations'
+import {
+  createRunConfig,
+  getProviderStatusText,
+  groupConversationsByDate,
+  reconcileChatRunPreferences,
+  toRuntimeConfig,
+} from '@/utils/conversations'
 
 const placeholderConversationTitles = new Set(['', 'New Conversation', 'Conversation', '新对话'])
 
@@ -43,7 +52,7 @@ type LiveAssistantMessage = AssistantConversationMessage & {
 const createStreamStatusMeta = (models: string[]) =>
   Object.fromEntries(models.map((model) => [model, { status: 'idle' as const }]))
 
-const createAssistantMessage = (councilOrder: string[]): LiveAssistantMessage => ({
+const createAssistantMessage = (runConfig: MdtRunConfig): LiveAssistantMessage => ({
   id:
     (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
     `assistant_${Date.now()}_${Math.random().toString(16).slice(2)}`,
@@ -52,6 +61,7 @@ const createAssistantMessage = (councilOrder: string[]): LiveAssistantMessage =>
   stage2: null,
   stage3: null,
   metadata: null,
+  runConfig,
   created_at: new Date().toISOString(),
   stream: {
     stage1: {},
@@ -59,8 +69,8 @@ const createAssistantMessage = (councilOrder: string[]): LiveAssistantMessage =>
     stage3: { response: '', thinking: '' },
   },
   streamMeta: {
-    stage1: createStreamStatusMeta(councilOrder),
-    stage2: createStreamStatusMeta(councilOrder),
+    stage1: createStreamStatusMeta(runConfig.councilModels),
+    stage2: createStreamStatusMeta(runConfig.councilModels),
     stage3: { status: 'idle' },
   },
   loading: {
@@ -113,8 +123,8 @@ const createRequestId = () =>
   (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
   `request_${Date.now()}_${Math.random().toString(16).slice(2)}`
 
-const createFreshAssistantMessage = (assistantId: string, councilOrder: string[], createdAt?: string) => ({
-  ...createAssistantMessage(councilOrder),
+const createFreshAssistantMessage = (assistantId: string, runConfig: MdtRunConfig, createdAt?: string) => ({
+  ...createAssistantMessage(runConfig),
   id: assistantId,
   created_at: createdAt || new Date().toISOString(),
 })
@@ -137,6 +147,7 @@ const markStatusMapAsError = (statuses: Record<string, StreamStatusMeta>, messag
 
 const ensureLiveAssistantMessage = (message: AssistantConversationMessage): LiveAssistantMessage => ({
   ...message,
+  runConfig: message.runConfig || null,
   stream: {
     stage1: { ...(message.stream?.stage1 || {}) },
     stage2: { ...(message.stream?.stage2 || {}) },
@@ -204,6 +215,10 @@ export function useMdtApp() {
   const hasRestoredSelection = ref(false)
   const preferredProjectId = ref<string | null>(null)
   const preferredConversationId = ref<string | null>(null)
+  const chatRunPreferences = ref<ChatRunPreferences>({
+    targetStage: 'stage3',
+    selectedCouncilModels: [],
+  })
   const resumingRunIds = new Set<string>()
   const activeRunControllers = new Map<string, { requestId: string; controller: AbortController }>()
 
@@ -247,6 +262,13 @@ export function useMdtApp() {
   const providerErrorMessage = computed(() => latestConversationError.value || lastProviderError.value)
   const suggestedProjectName = computed(() => buildProjectName())
   const runtimeConfig = computed<RuntimeConfig>(() => toRuntimeConfig(providerSettings.value))
+  const availableCouncilModels = computed(() => runtimeConfig.value.council_models || [])
+  const currentChatRunPreferences = computed<ChatRunPreferences>(() =>
+    reconcileChatRunPreferences(chatRunPreferences.value, availableCouncilModels.value),
+  )
+  const currentRunConfig = computed<MdtRunConfig>(() =>
+    createRunConfig(providerSettings.value, currentChatRunPreferences.value),
+  )
   const groupedConversations = computed(() => groupConversationsByDate(conversations.value, locale.value))
   const providerConfigured = computed(() => runtimeConfig.value.configured)
   const providerStatus = computed<'ready' | 'running' | 'error' | 'unconfigured'>(() => {
@@ -540,6 +562,10 @@ export function useMdtApp() {
       setLocale(preferences.locale)
       preferredProjectId.value = preferences.lastProjectId || null
       preferredConversationId.value = preferences.lastConversationId || null
+      chatRunPreferences.value = {
+        targetStage: preferences.chatTargetStage || 'stage3',
+        selectedCouncilModels: preferences.chatSelectedCouncilModels || [],
+      }
       if (preferredProjectId.value) {
         currentProjectId.value = preferredProjectId.value
       }
@@ -550,11 +576,15 @@ export function useMdtApp() {
     }
   }
 
-  const saveAppPreferences = async (input: { locale?: 'zh-CN' | 'en'; lastProjectId?: string | null; lastConversationId?: string | null }) => {
+  const saveAppPreferences = async (input: Partial<AppPreferences>) => {
     try {
       const saved = await api.saveAppPreferences(input)
       preferredProjectId.value = saved.lastProjectId || null
       preferredConversationId.value = saved.lastConversationId || null
+      chatRunPreferences.value = {
+        targetStage: saved.chatTargetStage || 'stage3',
+        selectedCouncilModels: saved.chatSelectedCouncilModels || [],
+      }
       return saved
     } catch (error) {
       console.error('Failed to save app preferences', error)
@@ -566,6 +596,83 @@ export function useMdtApp() {
     const saved = await saveAppPreferences({ locale: nextLocale })
     setLocale(saved?.locale || nextLocale)
   }
+
+  const persistChatRunPreferences = async (nextPreferences: ChatRunPreferences) => {
+    chatRunPreferences.value = nextPreferences
+    if (!hasLoadedAppPreferences.value) return nextPreferences
+
+    const saved = await saveAppPreferences({
+      chatTargetStage: nextPreferences.targetStage,
+      chatSelectedCouncilModels: nextPreferences.selectedCouncilModels,
+    })
+
+    return saved
+      ? {
+          targetStage: saved.chatTargetStage || nextPreferences.targetStage,
+          selectedCouncilModels: saved.chatSelectedCouncilModels || nextPreferences.selectedCouncilModels,
+        }
+      : nextPreferences
+  }
+
+  const setChatTargetStage = async (targetStage: ChatRunPreferences['targetStage']) => {
+    const nextPreferences = reconcileChatRunPreferences(
+      {
+        ...chatRunPreferences.value,
+        targetStage,
+      },
+      availableCouncilModels.value,
+    )
+    await persistChatRunPreferences(nextPreferences)
+  }
+
+  const toggleChatCouncilModel = async (model: string) => {
+    const selected = new Set(currentChatRunPreferences.value.selectedCouncilModels)
+    if (selected.has(model)) {
+      if (selected.size === 1) return
+      selected.delete(model)
+    } else {
+      selected.add(model)
+    }
+
+    await persistChatRunPreferences(
+      reconcileChatRunPreferences(
+        {
+          ...chatRunPreferences.value,
+          selectedCouncilModels: [...selected],
+        },
+        availableCouncilModels.value,
+      ),
+    )
+  }
+
+  const selectAllChatCouncilModels = async () => {
+    await persistChatRunPreferences(
+      reconcileChatRunPreferences(
+        {
+          ...chatRunPreferences.value,
+          selectedCouncilModels: availableCouncilModels.value,
+        },
+        availableCouncilModels.value,
+      ),
+    )
+  }
+
+  const resetChatRunPreferences = async () => {
+    await persistChatRunPreferences(
+      reconcileChatRunPreferences(
+        {
+          targetStage: 'stage3',
+          selectedCouncilModels: availableCouncilModels.value,
+        },
+        availableCouncilModels.value,
+      ),
+    )
+  }
+
+  const resolveStoredRunConfig = (
+    rawRunConfig?: MdtRunConfig | null,
+    fallback?: Partial<MdtRunConfig> | null,
+  ) => createRunConfig(providerSettings.value, rawRunConfig || fallback || currentRunConfig.value)
 
   const loadConversation = async (conversationId: string, options: { force?: boolean } = {}) => {
     const cached = conversationCache.value[conversationId]
@@ -845,6 +952,7 @@ export function useMdtApp() {
     assistantMessageId,
     userMessageId,
     content,
+    runConfig,
     shouldGenerateTitle,
     startedAt,
   }: {
@@ -854,6 +962,7 @@ export function useMdtApp() {
     assistantMessageId: string
     userMessageId: string
     content: string
+    runConfig: MdtRunConfig
     shouldGenerateTitle: boolean
     startedAt: string
   }): PersistedConversationRun => ({
@@ -864,6 +973,7 @@ export function useMdtApp() {
     userMessageId,
     content,
     locale: locale.value,
+    runConfig,
     shouldGenerateTitle,
     startedAt,
     updatedAt: startedAt,
@@ -872,12 +982,12 @@ export function useMdtApp() {
     lastError: '',
   })
 
-  const createRunningAssistantPlaceholder = (assistantMessageId = createRequestId(), assistantCreatedAt?: string) => {
-    const assistantMessage = createFreshAssistantMessage(
-      assistantMessageId,
-      runtimeConfig.value.council_models,
-      assistantCreatedAt,
-    )
+  const createRunningAssistantPlaceholder = (
+    runConfig: MdtRunConfig,
+    assistantMessageId = createRequestId(),
+    assistantCreatedAt?: string,
+  ) => {
+    const assistantMessage = createFreshAssistantMessage(assistantMessageId, runConfig, assistantCreatedAt)
     assistantMessage.loading = {
       stage1: true,
       stage2: false,
@@ -893,6 +1003,7 @@ export function useMdtApp() {
     assistantMessageCreatedAt,
     userMessageId,
     content,
+    runConfig,
     shouldGenerateTitle,
     messageLocale,
   }: {
@@ -902,6 +1013,7 @@ export function useMdtApp() {
     assistantMessageCreatedAt?: string
     userMessageId: string
     content: string
+    runConfig: MdtRunConfig
     shouldGenerateTitle: boolean
     messageLocale: 'zh-CN' | 'en'
   }) => {
@@ -914,6 +1026,7 @@ export function useMdtApp() {
       assistantMessageId,
       userMessageId,
       content,
+      runConfig,
       shouldGenerateTitle,
       startedAt,
     })
@@ -944,6 +1057,7 @@ export function useMdtApp() {
       assistantMessageId,
       assistantMessageCreatedAt,
       content,
+      runConfig,
       shouldGenerateTitle,
       messageLocale,
     })
@@ -976,10 +1090,12 @@ export function useMdtApp() {
   const prepareAssistantPlaceholder = async ({
     conversationId,
     assistantMessageId,
+    runConfig,
     assistantCreatedAt,
   }: {
     conversationId: string
     assistantMessageId: string
+    runConfig: MdtRunConfig
     assistantCreatedAt?: string
   }) => {
     const nextConversation = updateConversationById(conversationId, (conversation) => {
@@ -987,11 +1103,7 @@ export function useMdtApp() {
       const placeholderIndex = conversation.messages.findIndex(
         (message) => message.role === 'assistant' && message.id === assistantMessageId,
       )
-      const freshAssistant = createFreshAssistantMessage(
-        assistantMessageId,
-        runtimeConfig.value.council_models,
-        assistantCreatedAt,
-      )
+      const freshAssistant = createFreshAssistantMessage(assistantMessageId, runConfig, assistantCreatedAt)
 
       if (placeholderIndex >= 0) {
         conversation.messages[placeholderIndex] = freshAssistant
@@ -1079,6 +1191,7 @@ export function useMdtApp() {
     assistantMessageId,
     assistantMessageCreatedAt,
     content,
+    runConfig,
     shouldGenerateTitle,
     messageLocale,
   }: {
@@ -1088,6 +1201,7 @@ export function useMdtApp() {
     assistantMessageId: string
     assistantMessageCreatedAt?: string
     content: string
+    runConfig: MdtRunConfig
     shouldGenerateTitle: boolean
     messageLocale: 'zh-CN' | 'en'
   }) => {
@@ -1101,11 +1215,14 @@ export function useMdtApp() {
 
       updateAssistantMessage((message) => ({
         ...message,
-        stage3: message.stage3 || {
-          model: runtimeConfig.value.chairman_model || 'chairman',
-          response: message.stream.stage3.response || nextErrorMessage,
-          reasoning_details: null,
-        },
+        stage3:
+          runConfig.targetStage === 'stage3'
+            ? message.stage3 || {
+                model: runConfig.chairmanModel || 'chairman',
+                response: message.stream.stage3.response || nextErrorMessage,
+                reasoning_details: null,
+              }
+            : null,
         stream: {
           ...message.stream,
           stage3: {
@@ -1116,7 +1233,8 @@ export function useMdtApp() {
         streamMeta: {
           stage1: markStatusMapAsError(message.streamMeta.stage1, nextErrorMessage),
           stage2: markStatusMapAsError(message.streamMeta.stage2, nextErrorMessage),
-          stage3: { status: 'error', message: nextErrorMessage },
+          stage3:
+            runConfig.targetStage === 'stage3' ? { status: 'error', message: nextErrorMessage } : { status: 'idle' },
         },
         loading: {
           stage1: false,
@@ -1431,7 +1549,7 @@ export function useMdtApp() {
               updateConversationRunState(conversationId, (state) => ({
                 ...state,
                 status: state.status === 'error' ? 'error' : 'complete',
-                stage: 'stage3',
+                stage: runConfig.targetStage,
                 completedAt: now,
                 lastActivityAt: now,
                 hasUnreadUpdate: currentConversationId.value === conversationId ? false : true,
@@ -1440,7 +1558,7 @@ export function useMdtApp() {
               syncPersistedRunProgress(conversationId, requestId, {
                 status: 'complete',
                 updatedAt: now,
-                stage: 'stage3',
+                stage: runConfig.targetStage,
                 lastError: '',
               })
               if (getRunState(conversationId).status !== 'error') {
@@ -1479,6 +1597,7 @@ export function useMdtApp() {
           shouldGenerateTitle,
           assistantMessageId,
           assistantMessageCreatedAt,
+          runConfig,
           signal: abortController.signal,
         },
       )
@@ -1548,13 +1667,20 @@ export function useMdtApp() {
             }
           }
 
+          const existingAssistantMessage = conversation.messages.find(
+            (message) => message.role === 'assistant' && message.id === run.assistantMessageId,
+          ) as AssistantConversationMessage | undefined
+          const runConfig = resolveStoredRunConfig(run.runConfig, {
+            ...(existingAssistantMessage?.runConfig || {}),
+            targetStage: run.stage === 'stage1' || run.stage === 'stage2' || run.stage === 'stage3' ? run.stage : 'stage3',
+          })
+
           await prepareAssistantPlaceholder({
             conversationId: run.conversationId,
             assistantMessageId: run.assistantMessageId,
+            runConfig,
             assistantCreatedAt:
-              (conversation.messages.find(
-                (message) => message.role === 'assistant' && message.id === run.assistantMessageId,
-              ) as AssistantConversationMessage | undefined)?.created_at || run.startedAt,
+              existingAssistantMessage?.created_at || run.startedAt,
           })
 
           const shouldGenerateTitle = run.shouldGenerateTitle && !hasResolvedConversationTitle(conversation)
@@ -1566,10 +1692,9 @@ export function useMdtApp() {
             requestId: run.requestId,
             assistantMessageId: run.assistantMessageId,
             assistantMessageCreatedAt:
-              (conversation.messages.find(
-                (message) => message.role === 'assistant' && message.id === run.assistantMessageId,
-              ) as AssistantConversationMessage | undefined)?.created_at || run.startedAt,
+              existingAssistantMessage?.created_at || run.startedAt,
             content: run.content,
+            runConfig,
             shouldGenerateTitle,
             messageLocale: run.locale,
           })
@@ -1652,10 +1777,20 @@ export function useMdtApp() {
     const latestUserMessage = conversation.messages[latestUserMessageIndex]
     if (!latestUserMessage || latestUserMessage.role !== 'user') return
 
+    const latestAssistantMessageIndex = getLatestAssistantMessageIndex(conversation)
+    const latestAssistantMessage =
+      latestAssistantMessageIndex >= 0
+        ? (conversation.messages[latestAssistantMessageIndex] as AssistantConversationMessage | undefined)
+        : undefined
+    const runConfig = resolveStoredRunConfig(latestAssistantMessage?.runConfig, currentRunConfig.value)
+    if (runConfig.councilModels.length === 0) {
+      lastProviderError.value = t('errorSelectCouncilModels')
+      return
+    }
+
     lastProviderError.value = ''
 
-    const assistantMessage = createRunningAssistantPlaceholder()
-    const latestAssistantMessageIndex = getLatestAssistantMessageIndex(conversation)
+    const assistantMessage = createRunningAssistantPlaceholder(runConfig)
     const shouldGenerateTitle = !hasResolvedConversationTitle(conversation)
 
     const nextConversation = updateConversationById(conversationId, (currentConversationValue) => {
@@ -1705,6 +1840,7 @@ export function useMdtApp() {
       assistantMessageCreatedAt: assistantMessage.created_at,
       userMessageId: latestUserMessage.id || createRequestId(),
       content: trimmedContent,
+      runConfig,
       shouldGenerateTitle,
       messageLocale: locale.value,
     })
@@ -1748,9 +1884,15 @@ export function useMdtApp() {
       return
     }
 
+    const runConfig = currentRunConfig.value
+    if (runConfig.councilModels.length === 0) {
+      lastProviderError.value = t('errorSelectCouncilModels')
+      return
+    }
+
     lastProviderError.value = ''
 
-    const assistantMessage = createRunningAssistantPlaceholder()
+    const assistantMessage = createRunningAssistantPlaceholder(runConfig)
     const userMessage = createUserMessage(trimmedContent)
     const optimisticCreatedAt = conversationForRequest.created_at || new Date().toISOString()
     const optimisticTitle = String(conversationForRequest.title || t('conversationUntitled')).trim()
@@ -1807,6 +1949,7 @@ export function useMdtApp() {
       assistantMessageCreatedAt: assistantMessage.created_at,
       userMessageId: userMessage.id || createRequestId(),
       content: trimmedContent,
+      runConfig,
       shouldGenerateTitle,
       messageLocale: locale.value,
     })
@@ -1843,6 +1986,28 @@ export function useMdtApp() {
     }
   })
 
+  watch(
+    currentChatRunPreferences,
+    (nextPreferences) => {
+      const currentSelection = chatRunPreferences.value.selectedCouncilModels.join('|')
+      const nextSelection = nextPreferences.selectedCouncilModels.join('|')
+      if (
+        chatRunPreferences.value.targetStage === nextPreferences.targetStage &&
+        currentSelection === nextSelection
+      ) {
+        return
+      }
+
+      if (!hasLoadedAppPreferences.value) {
+        chatRunPreferences.value = nextPreferences
+        return
+      }
+
+      void persistChatRunPreferences(nextPreferences)
+    },
+    { deep: true },
+  )
+
   watch(providerConfigured, (configured) => {
     if (configured) {
       void resumePersistedRuns()
@@ -1866,6 +2031,7 @@ export function useMdtApp() {
     currentConversationRecovering,
     currentConversationRunState,
     currentConversationRunning,
+    currentChatRunPreferences,
     currentProject,
     currentProjectId,
     draftMessage,
@@ -1895,14 +2061,18 @@ export function useMdtApp() {
     openSettings,
     renameConversation,
     renameProject,
+    resetChatRunPreferences,
     retryConversationRecovery,
     rerunConversation,
     saveSettings,
     selectConversation,
+    selectAllChatCouncilModels,
     selectProject,
     sendMessage,
     setLocale: setAppLocale,
+    setChatTargetStage,
     stopConversation,
+    toggleChatCouncilModel,
     toggleSidebar: () => {
       isSidebarCollapsed.value = !isSidebarCollapsed.value
     },

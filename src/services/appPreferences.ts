@@ -1,4 +1,5 @@
 import { requestToPromise, withStore } from './browserDb'
+import { normalizeTargetStage } from '@/utils/conversations'
 import type { AppLocale, AppPreferences } from '@/types'
 
 const APP_PREFERENCES_KEY = 'app_preferences'
@@ -12,6 +13,8 @@ export const DEFAULT_APP_PREFERENCES: AppPreferences = {
   locale: 'zh-CN',
   lastProjectId: null,
   lastConversationId: null,
+  chatTargetStage: 'stage3',
+  chatSelectedCouncilModels: [],
 }
 
 export function sanitizeLocale(value: unknown): AppLocale {
@@ -23,11 +26,18 @@ function sanitizeOptionalId(value: unknown) {
   return normalized || null
 }
 
+function sanitizeModelList(value: unknown) {
+  if (!Array.isArray(value)) return []
+  return [...new Set(value.map((entry) => String(entry ?? '').trim()).filter(Boolean))]
+}
+
 export function sanitizeAppPreferences(input?: Partial<AppPreferences> | null): AppPreferences {
   return {
     locale: sanitizeLocale(input?.locale),
     lastProjectId: sanitizeOptionalId(input?.lastProjectId),
     lastConversationId: sanitizeOptionalId(input?.lastConversationId),
+    chatTargetStage: normalizeTargetStage(input?.chatTargetStage),
+    chatSelectedCouncilModels: sanitizeModelList(input?.chatSelectedCouncilModels),
   }
 }
 

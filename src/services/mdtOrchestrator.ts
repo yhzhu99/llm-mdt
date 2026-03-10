@@ -2,6 +2,7 @@ import { conversationStore } from './conversationStore'
 import { chatCompletion, chatCompletionStream } from './llmClient'
 import { isProviderConfigured } from './providerSettings'
 import { translate } from '@/i18n'
+import { createRunConfig } from '@/utils/conversations'
 import { isAbortError, pickBestReasoningText } from '@/utils'
 import type {
   AppLocale,
@@ -718,6 +719,7 @@ export async function runMdtConversationStream({
     typeof options?.shouldGenerateTitle === 'boolean'
       ? options.shouldGenerateTitle
       : (conversation.messages || []).length === 0
+  const runConfig = createRunConfig(settings, options?.runConfig || null)
   const titlePromise = isFirstMessage
     ? generateConversationTitle(content, settings, client, locale, options?.signal).catch((error) => {
         if (isAbortError(error)) {
@@ -739,7 +741,7 @@ export async function runMdtConversationStream({
   try {
     stage1Results = (await collectStageResponses({
       stagePrefix: 'stage1',
-      models: settings.councilModels,
+      models: runConfig.councilModels,
       messages: [buildUserMessage(content)],
       settings,
       client,
@@ -750,14 +752,21 @@ export async function runMdtConversationStream({
     })) as Stage1Result[]
     emit({ type: 'stage1_complete', data: stage1Results })
 
-    if (stage1Results.length > 0) {
+    if (runConfig.targetStage === 'stage1') {
+      metadata = {
+        label_to_model: {},
+        aggregate_rankings: [],
+        positions_by_model: {},
+        stage2_parsed_rankings: [],
+      }
+    } else if (stage1Results.length > 0) {
       const labelToModel = Object.fromEntries(
         stage1Results.map((result, index) => [getResponseLabel(locale, index), result.model]),
       ) as Record<string, string>
 
       stage2Results = (await collectStageResponses({
         stagePrefix: 'stage2',
-        models: settings.councilModels,
+        models: runConfig.councilModels,
         messages: [{ role: 'user', content: buildRankingPrompt(content, stage1Results, locale) }],
         settings,
         client,
@@ -774,55 +783,57 @@ export async function runMdtConversationStream({
       metadata = calculateRankingDetails(stage2Results, labelToModel, locale)
       emit({ type: 'stage2_complete', data: stage2Results, metadata })
 
-      emit({ type: 'stage3_start' })
-      let stage3Content = ''
-      let stage3Reasoning: string | null = null
-      let stage3ReasoningAcc = ''
-      let stage3Diagnostics = null
-      let stage3Failed = false
+      if (runConfig.targetStage === 'stage3') {
+        emit({ type: 'stage3_start' })
+        let stage3Content = ''
+        let stage3Reasoning: string | null = null
+        let stage3ReasoningAcc = ''
+        let stage3Diagnostics = null
+        let stage3Failed = false
 
-      for await (const event of client.chatCompletionStream(settings, {
-        model: settings.chairmanModel,
-        messages: [
-          {
-            role: 'user',
-            content: buildChairmanPrompt(content, stage1Results, stage2Results, metadata, locale),
-          },
-        ],
-        signal: options?.signal,
-      })) {
-        if (event.delta_type === 'content') {
-          const text = event.text || ''
-          stage3Content += text
-          emit({ type: 'stage3_delta', delta_type: 'content', text })
-        } else if (event.delta_type === 'reasoning') {
-          stage3ReasoningAcc += event.text || ''
-          emit({ type: 'stage3_delta', delta_type: 'reasoning', text: event.text || '' })
-        } else if (event.delta_type === 'final') {
-          stage3Reasoning = event.reasoning_details
-          stage3Diagnostics = event.diagnostics || null
-          if (!stage3Content && event.content) {
-            stage3Content = event.content
+        for await (const event of client.chatCompletionStream(settings, {
+          model: runConfig.chairmanModel,
+          messages: [
+            {
+              role: 'user',
+              content: buildChairmanPrompt(content, stage1Results, stage2Results, metadata, locale),
+            },
+          ],
+          signal: options?.signal,
+        })) {
+          if (event.delta_type === 'content') {
+            const text = event.text || ''
+            stage3Content += text
+            emit({ type: 'stage3_delta', delta_type: 'content', text })
+          } else if (event.delta_type === 'reasoning') {
+            stage3ReasoningAcc += event.text || ''
+            emit({ type: 'stage3_delta', delta_type: 'reasoning', text: event.text || '' })
+          } else if (event.delta_type === 'final') {
+            stage3Reasoning = event.reasoning_details
+            stage3Diagnostics = event.diagnostics || null
+            if (!stage3Content && event.content) {
+              stage3Content = event.content
+            }
+          } else if (event.delta_type === 'error') {
+            stage3Failed = true
+            stage3Diagnostics = event.diagnostics || null
+            emit({ type: 'stage3_error', message: event.message || translate(locale, 'orchestratorUnknownError') })
+            break
           }
-        } else if (event.delta_type === 'error') {
-          stage3Failed = true
-          stage3Diagnostics = event.diagnostics || null
-          emit({ type: 'stage3_error', message: event.message || translate(locale, 'orchestratorUnknownError') })
-          break
         }
-      }
 
-      stage3Result = {
-        model: settings.chairmanModel,
-        response:
-          stage3Content ||
-          (stage3Failed
-            ? translate(locale, 'orchestratorFinalSynthesisFailed')
-            : translate(locale, 'orchestratorFinalSynthesisMissing')),
-        reasoning_details: pickBestReasoningText(stage3Reasoning, stage3ReasoningAcc) || null,
-        diagnostics: stage3Diagnostics,
+        stage3Result = {
+          model: runConfig.chairmanModel,
+          response:
+            stage3Content ||
+            (stage3Failed
+              ? translate(locale, 'orchestratorFinalSynthesisFailed')
+              : translate(locale, 'orchestratorFinalSynthesisMissing')),
+          reasoning_details: pickBestReasoningText(stage3Reasoning, stage3ReasoningAcc) || null,
+          diagnostics: stage3Diagnostics,
+        }
+        emit({ type: 'stage3_complete', data: stage3Result })
       }
-      emit({ type: 'stage3_complete', data: stage3Result })
     } else {
       metadata = {
         label_to_model: {},
@@ -830,14 +841,18 @@ export async function runMdtConversationStream({
         positions_by_model: {},
         stage2_parsed_rankings: [],
       }
+
       emit({ type: 'stage2_complete', data: [], metadata })
-      emit({ type: 'stage3_start' })
-      stage3Result = {
-        model: settings.chairmanModel,
-        response: translate(locale, 'orchestratorAllModelsFailed'),
-        reasoning_details: null,
+
+      if (runConfig.targetStage === 'stage3') {
+        emit({ type: 'stage3_start' })
+        stage3Result = {
+          model: runConfig.chairmanModel,
+          response: translate(locale, 'orchestratorAllModelsFailed'),
+          reasoning_details: null,
+        }
+        emit({ type: 'stage3_complete', data: stage3Result })
       }
-      emit({ type: 'stage3_complete', data: stage3Result })
     }
   } catch (error) {
     if (isAbortError(error)) {
@@ -859,9 +874,9 @@ export async function runMdtConversationStream({
       }
     }
 
-    if (!stage3Result) {
+    if (!stage3Result && runConfig.targetStage === 'stage3') {
       stage3Result = {
-        model: settings.chairmanModel,
+        model: runConfig.chairmanModel,
         response: translate(locale, 'orchestratorRunFailed'),
         reasoning_details: null,
       }
@@ -892,6 +907,7 @@ export async function runMdtConversationStream({
       stage2: stage2Results,
       stage3: stage3Result,
       metadata,
+      runConfig,
       created_at:
         options.assistantMessageCreatedAt ||
         (messageIndex >= 0 ? latestConversation.messages[messageIndex]?.created_at : undefined) ||
@@ -912,6 +928,7 @@ export async function runMdtConversationStream({
       stage2: stage2Results,
       stage3: stage3Result,
       metadata,
+      runConfig,
       created_at: new Date().toISOString(),
     })
   }

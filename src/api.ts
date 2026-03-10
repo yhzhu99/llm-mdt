@@ -130,7 +130,11 @@ export const api = {
     return appPreferencesStore.save(input)
   },
 
-  async sendMessage(conversationId: string, payload: SendMessagePayload): Promise<SendMessageResult> {
+  async sendMessage(
+    conversationId: string,
+    payload: SendMessagePayload,
+    options?: MdtRunOptions,
+  ): Promise<SendMessageResult> {
     const result: SendMessageResult = {
       stage1: [],
       stage2: [],
@@ -147,7 +151,7 @@ export const api = {
       } else if (event.type === 'stage3_complete') {
         result.stage3 = event.data
       }
-    })
+    }, options)
 
     return result
   },
