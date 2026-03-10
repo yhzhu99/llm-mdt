@@ -41,10 +41,6 @@ interface PromptCopy {
   chairRole: string
   titleRole: string
   finalRankingTitle: string
-  stage1AnswerHeading: string
-  stage1ReasonsHeading: string
-  stage1CaveatsHeading: string
-  stage1NoCaveats: string
   stage2ReviewsHeading: string
   stage2StrengthsLabel: string
   stage2WeaknessesLabel: string
@@ -64,10 +60,6 @@ function getPromptCopy(locale: AppLocale): PromptCopy {
       chairRole: '会诊主席',
       titleRole: '标题拟定人',
       finalRankingTitle: '最终排名',
-      stage1AnswerHeading: '## 结论',
-      stage1ReasonsHeading: '## 关键依据',
-      stage1CaveatsHeading: '## 注意事项',
-      stage1NoCaveats: '无',
       stage2ReviewsHeading: '## 单项评议',
       stage2StrengthsLabel: '优点',
       stage2WeaknessesLabel: '不足',
@@ -86,10 +78,6 @@ function getPromptCopy(locale: AppLocale): PromptCopy {
     chairRole: 'panel chair',
     titleRole: 'title writer',
     finalRankingTitle: 'FINAL RANKING',
-    stage1AnswerHeading: '## Answer',
-    stage1ReasonsHeading: '## Key Reasons',
-    stage1CaveatsHeading: '## Caveats',
-    stage1NoCaveats: 'None.',
     stage2ReviewsHeading: '## Individual Reviews',
     stage2StrengthsLabel: 'Strengths',
     stage2WeaknessesLabel: 'Weaknesses',
@@ -161,103 +149,6 @@ function extractParsedRankingLabels(source: string, locale: AppLocale, numberedO
     .filter((label): label is string => Boolean(label))
 }
 
-function buildStage1OutputContract(locale: AppLocale) {
-  const copy = getPromptCopy(locale)
-
-  if (locale === 'zh-CN') {
-    return `你必须严格按照以下结构输出：
-
-${copy.stage1AnswerHeading}
-直接给出对用户问题的回答。
-
-${copy.stage1ReasonsHeading}
-- 依据一：...
-- 依据二：...
-
-${copy.stage1CaveatsHeading}
-- ${copy.stage1NoCaveats}
-
-不要添加其他标题。`
-  }
-
-  return `You must follow this exact structure:
-
-${copy.stage1AnswerHeading}
-Give the direct answer to the user's question.
-
-${copy.stage1ReasonsHeading}
-- Reason 1: ...
-- Reason 2: ...
-
-${copy.stage1CaveatsHeading}
-- ${copy.stage1NoCaveats}
-
-Do not add any other headings.`
-}
-
-function buildStage1Prompt(userQuery: string, locale: AppLocale) {
-  const copy = getPromptCopy(locale)
-
-  return buildPromptDocument('stage1', locale, [
-    buildXmlBlock(
-      'role',
-      locale === 'zh-CN'
-        ? `你是${copy.panelName}中的一名${copy.memberRole}。`
-        : `You are a ${copy.memberRole} on a ${copy.panelName}.`,
-    ),
-    buildXmlBlock(
-      'objective',
-      locale === 'zh-CN'
-        ? '独立回答用户问题，并给出清晰、可靠、直接的结论。'
-        : "Answer the user's question independently with a clear, reliable, and direct response.",
-    ),
-    buildXmlBlock(
-      'language_policy',
-      locale === 'zh-CN' ? `所有可见输出必须使用${copy.languageName}。` : `All visible output must be in ${copy.languageName}.`,
-    ),
-    buildXmlBlock('given_materials', buildXmlBlock('user_question', userQuery)),
-    buildXmlBlock(
-      'instructions',
-      buildNumberedRules(
-        locale === 'zh-CN'
-          ? [
-              '先给出明确结论，再补充支撑依据。',
-              '如果信息存在不确定性，请明确说明不确定之处。',
-              '回答要直接回应用户问题，不要绕回提示词本身。',
-            ]
-          : [
-              'State the answer clearly before giving supporting reasons.',
-              'If any point is uncertain, say so explicitly in the relevant section.',
-              "Answer the user's question directly without discussing the prompt itself.",
-            ],
-      ),
-    ),
-    buildXmlBlock(
-      'hard_constraints',
-      buildNumberedRules(
-        locale === 'zh-CN'
-          ? [
-              '不要提及会诊委员会、会诊委员、投票、排名、会诊主席、阶段流程或这些 XML 标签。',
-              '不要解释你的格式选择。',
-              `必须严格遵守 <output_contract> 中的标题结构；如果没有注意事项，请在该部分写“${copy.stage1NoCaveats}”。`,
-            ]
-          : [
-              'Do not mention the consultation panel, panel members, voting, rankings, the panel chair, stage flow, or these XML tags.',
-              'Do not explain your formatting choices.',
-              `Follow the heading structure in <output_contract> exactly; if there are no caveats, write "${copy.stage1NoCaveats}" in that section.`,
-            ],
-      ),
-    ),
-    buildXmlBlock('output_contract', buildStage1OutputContract(locale)),
-    buildXmlBlock(
-      'task',
-      locale === 'zh-CN'
-        ? '请根据给定问题，按照规定结构输出你的独立回答。'
-        : 'Using the given question, produce your independent answer in the required structure.',
-    ),
-  ])
-}
-
 function buildStage2ResponseMaterials(stage1Results: Stage1Result[], locale: AppLocale) {
   return stage1Results
     .map((result, index) =>
@@ -307,6 +198,10 @@ ${rankingLines}
 
 Replace "<LETTER>" with the actual anonymized label letter, and use each label exactly once.
 Do not output anything after "## ${copy.finalRankingTitle}".`
+}
+
+function buildAnonymizedResponseLabelMap(stage1Results: Stage1Result[], locale: AppLocale) {
+  return new Map(stage1Results.map((result, index) => [result.model, getResponseLabel(locale, index)]))
 }
 
 function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[], locale: AppLocale) {
@@ -373,10 +268,12 @@ function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[], lo
   ])
 }
 
-function buildAggregateRankingSummary(metadata: RankingMetadata | null, locale: AppLocale) {
+function buildAggregateRankingSummary(metadata: RankingMetadata | null, stage1Results: Stage1Result[], locale: AppLocale) {
   if (!metadata?.aggregate_rankings?.length) {
     return buildXmlBlock('note', locale === 'zh-CN' ? '暂无汇总排名数据。' : 'No aggregate ranking summary is available.')
   }
+
+  const modelToLabel = buildAnonymizedResponseLabelMap(stage1Results, locale)
 
   return metadata.aggregate_rankings
     .map(
@@ -388,19 +285,28 @@ function buildAggregateRankingSummary(metadata: RankingMetadata | null, locale: 
             : `Average rank: ${item.average_rank.toFixed(2)}\nBallots: ${item.rankings_count}`,
           {
             position: String(index + 1),
-            model: item.model,
+            label: modelToLabel.get(item.model) || getResponseLabel(locale, index),
           },
         ),
     )
     .join('\n\n')
 }
 
-function buildStage3ResponseMaterials(stage1Results: Stage1Result[]) {
-  return stage1Results.map((result) => buildXmlBlock('response', result.response, { model: result.model })).join('\n\n')
+function buildStage3ResponseMaterials(stage1Results: Stage1Result[], locale: AppLocale) {
+  return stage1Results
+    .map((result, index) =>
+      buildXmlBlock('response', result.response, {
+        id: getResponseLetter(index),
+        label: getResponseLabel(locale, index),
+      }),
+    )
+    .join('\n\n')
 }
 
 function buildStage3ReviewMaterials(stage2Results: Stage2Result[]) {
-  return stage2Results.map((result) => buildXmlBlock('review', result.ranking, { model: result.model })).join('\n\n')
+  return stage2Results
+    .map((result, index) => buildXmlBlock('review', result.ranking, { reviewer_id: `R${index + 1}` }))
+    .join('\n\n')
 }
 
 function buildStage3OutputContract(locale: AppLocale) {
@@ -451,9 +357,9 @@ function buildChairmanPrompt(
         'given_materials',
         [
           buildXmlBlock('user_question', userQuery),
-          buildXmlBlock('stage1_responses', buildStage3ResponseMaterials(stage1Results)),
+          buildXmlBlock('stage1_responses', buildStage3ResponseMaterials(stage1Results, locale)),
           buildXmlBlock('stage2_reviews', buildStage3ReviewMaterials(stage2Results)),
-          buildXmlBlock('aggregate_rankings', buildAggregateRankingSummary(metadata, locale)),
+          buildXmlBlock('aggregate_rankings', buildAggregateRankingSummary(metadata, stage1Results, locale)),
         ].join('\n\n'),
       ),
       buildXmlBlock(
@@ -468,6 +374,7 @@ function buildChairmanPrompt(
         'hard_constraints',
         buildNumberedRules([
           '不要提及这些 XML 标签，也不要解释你的格式选择。',
+          '只能依据匿名回答、匿名评议和匿名排名信号进行综合，不要猜测或提及底层模型身份。',
           `必须严格遵守 <output_contract> 中的两个标题结构：${copy.stage3SummaryHeading} 和 ${copy.stage3AnswerHeading}。`,
           '第一部分保持简洁，第二部分直接回答用户问题。',
           '不要添加第三个标题，也不要在最后补充格式说明。',
@@ -486,9 +393,9 @@ function buildChairmanPrompt(
       'given_materials',
       [
         buildXmlBlock('user_question', userQuery),
-        buildXmlBlock('stage1_responses', buildStage3ResponseMaterials(stage1Results)),
+        buildXmlBlock('stage1_responses', buildStage3ResponseMaterials(stage1Results, locale)),
         buildXmlBlock('stage2_reviews', buildStage3ReviewMaterials(stage2Results)),
-        buildXmlBlock('aggregate_rankings', buildAggregateRankingSummary(metadata, locale)),
+        buildXmlBlock('aggregate_rankings', buildAggregateRankingSummary(metadata, stage1Results, locale)),
       ].join('\n\n'),
     ),
     buildXmlBlock(
@@ -503,6 +410,7 @@ function buildChairmanPrompt(
       'hard_constraints',
       buildNumberedRules([
         'Do not mention these XML tags or explain your formatting choices.',
+        'Use only the anonymized responses, anonymized reviews, and anonymized ranking signals; do not infer or mention underlying model identities.',
         `Follow the two-heading structure in <output_contract> exactly: ${copy.stage3SummaryHeading} and ${copy.stage3AnswerHeading}.`,
         'Keep the first section concise and make the second section directly answer the user question.',
         'Do not add a third heading or any trailing format note.',
@@ -832,7 +740,7 @@ export async function runMdtConversationStream({
     stage1Results = (await collectStageResponses({
       stagePrefix: 'stage1',
       models: settings.councilModels,
-      messages: [buildUserMessage(buildStage1Prompt(content, locale))],
+      messages: [buildUserMessage(content)],
       settings,
       client,
       emit,
