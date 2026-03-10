@@ -52,15 +52,6 @@ const canSubmit = computed(
     Boolean(input.value.trim()),
 )
 const showRunConfig = computed(() => props.providerConfigured && props.availableModels.length > 0)
-const targetStageLabel = computed(
-  () => stageOptions.value.find((option) => option.key === props.targetStage)?.label || t('stage3Title'),
-)
-const configSummary = computed(() =>
-  t('composerConfigSummary', {
-    stage: targetStageLabel.value,
-    count: props.selectedModels.length,
-  }),
-)
 
 const autosize = () => {
   const textarea = textareaRef.value
@@ -106,24 +97,6 @@ const isOnlySelectedModel = (model: string) =>
     <div class="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-primary/6 via-transparent to-transparent" />
 
     <div class="relative p-4 sm:p-5">
-      <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0">
-          <div class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-            {{ centered ? t('askCouncilQuestion') : t('conversationQuestionLabel') }}
-          </div>
-          <div class="mt-1 text-sm font-medium text-foreground">
-            {{ providerConfigured ? configSummary : t('providerSetupRequired') }}
-          </div>
-        </div>
-
-        <div
-          v-if="showRunConfig"
-          class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground"
-        >
-          {{ t('composerEnabledModels', { selected: selectedModels.length, total: availableModels.length }) }}
-        </div>
-      </div>
-
       <textarea
         ref="textareaRef"
         v-model="input"
@@ -166,9 +139,6 @@ const isOnlySelectedModel = (model: string) =>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <span class="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-              {{ t('composerConfigLabel') }}
-            </span>
             <button
               type="button"
               class="inline-flex items-center rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:opacity-60"
@@ -215,7 +185,7 @@ const isOnlySelectedModel = (model: string) =>
       </div>
 
       <div class="mt-4 flex flex-col gap-3 border-t border-border/70 pt-3 sm:flex-row sm:items-center sm:justify-between">
-        <div class="min-w-0 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+        <div class="min-h-5 text-xs text-muted-foreground">
           <div
             v-if="isLoading"
             class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 font-medium text-primary"
@@ -233,18 +203,6 @@ const isOnlySelectedModel = (model: string) =>
               <Settings2 :size="14" />
               {{ t('openSettings') }}
             </button>
-          </div>
-          <div v-else class="truncate">{{ t('composerRunConfigHint') }}</div>
-
-          <div class="inline-flex items-center gap-1.5">
-            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Enter</span>
-            <span>{{ t('composerEnterSend') }}</span>
-          </div>
-          <div class="inline-flex items-center gap-1.5">
-            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Shift</span>
-            <span>+</span>
-            <span class="rounded-md border border-border bg-background/90 px-1.5 py-0.5 font-medium text-foreground">Enter</span>
-            <span>{{ t('composerNewline') }}</span>
           </div>
         </div>
 

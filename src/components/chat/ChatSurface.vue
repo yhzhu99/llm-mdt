@@ -175,11 +175,6 @@ const stageRank: Record<StageKey, number> = {
 
 const composerAvailableModels = computed(() => props.runtimeConfig?.council_models || [])
 const hasConversationMessages = computed(() => Boolean(props.conversation?.messages?.length))
-const heroHighlights = computed(() => [
-  t('homeFeatureStage1'),
-  t('homeFeatureStage2'),
-  t('homeFeatureStage3'),
-])
 
 const shortModelName = (model: string) => model.split('/')[1] || model
 const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
@@ -584,31 +579,14 @@ watch(
       class="scrollbar-hide flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5"
     >
       <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full w-full max-w-[80rem] items-center">
-        <div class="w-full space-y-8 py-6 sm:py-10">
-          <div class="max-w-3xl space-y-4">
-            <div
-              class="inline-flex items-center gap-2 rounded-full border border-border/80 bg-background/80 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground"
-            >
-              <span
-                :class="providerConfigured ? 'h-2 w-2 rounded-full bg-primary' : 'h-2 w-2 rounded-full bg-muted-foreground/40'"
-              />
-              {{ t('appNameSecondary') }}
-            </div>
+        <div class="w-full space-y-6 py-6 sm:py-10">
+          <div class="max-w-3xl space-y-3">
             <h2 class="text-4xl font-semibold tracking-[-0.04em] text-foreground sm:text-5xl lg:text-6xl">
               {{ providerConfigured ? t('welcomeTitle') : t('configureBrowserProvider') }}
             </h2>
             <p class="max-w-2xl text-base leading-7 text-muted-foreground">
               {{ providerConfigured ? t('welcomeDescription') : t('providerSetupDescription') }}
             </p>
-            <div class="flex flex-wrap gap-2 pt-1">
-              <span
-                v-for="highlight in heroHighlights"
-                :key="highlight"
-                class="inline-flex items-center rounded-full border border-border/70 bg-background/75 px-3 py-1.5 text-xs font-medium text-muted-foreground"
-              >
-                {{ highlight }}
-              </span>
-            </div>
           </div>
 
           <ChatComposer
