@@ -146,7 +146,7 @@ describe('llmClient Anthropic parsing', () => {
       ),
     ).toEqual({
       delta_type: 'reasoning',
-      text: 'More detail.',
+      text: ' More detail.',
     })
 
     expect(
@@ -187,5 +187,57 @@ describe('llmClient Anthropic parsing', () => {
       ),
     ).toBeNull()
     expect(activeBlockTypes.has(0)).toBe(false)
+  })
+})
+
+describe('llmClient reasoning whitespace preservation', () => {
+  it('keeps whitespace-only reasoning deltas', () => {
+    expect(
+      __private__.extractReasoningDelta({
+        reasoning_text: ' ',
+      }),
+    ).toBe(' ')
+  })
+
+  it('keeps leading spaces in chat-completions reasoning deltas', () => {
+    expect(
+      __private__.extractReasoningDelta({
+        reasoning_text: ' about the "50米洗车问题"',
+      }),
+    ).toBe(' about the "50米洗车问题"')
+  })
+
+  it('keeps structured reasoning summary spacing from responses items', () => {
+    expect(
+      __private__.parseResponsesResult({
+        output: [
+          {
+            type: 'reasoning',
+            summary: [
+              { type: 'summary_text', text: 'The user is asking' },
+              { type: 'summary_text', text: ' about the "50米洗车问题".' },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
+      content: '',
+      reasoning_details: 'The user is asking about the "50米洗车问题".',
+    })
+  })
+
+  it('keeps explicit newlines between Anthropic thinking blocks', () => {
+    expect(
+      __private__.parseAnthropicMessageResult({
+        content: [
+          { type: 'thinking', thinking: 'First line.\n' },
+          { type: 'thinking', thinking: '\nSecond line.' },
+          { type: 'text', text: 'Final answer' },
+        ],
+      }),
+    ).toEqual({
+      content: 'Final answer',
+      reasoning_details: 'First line.\n\nSecond line.',
+    })
   })
 })

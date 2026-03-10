@@ -11,7 +11,7 @@ import type {
   RequestAttemptDiagnostic,
   RequestMode,
 } from '@/types'
-import { isAbortError, normalizeReasoningText, pickBestReasoningText } from '@/utils'
+import { isAbortError, joinReasoningText, normalizeReasoningFragment, normalizeReasoningText, pickBestReasoningText } from '@/utils'
 
 interface RequestConfig {
   endpoint: string
@@ -117,7 +117,7 @@ function joinText(parts: string[], separator = '\n\n') {
 function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 'reasoning_text'): string[] {
   if (value == null) return []
   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-    const text = preferredType ? normalizeReasoningText(String(value)) : String(value)
+    const text = preferredType ? normalizeReasoningFragment(String(value)) : String(value)
     return text ? [text] : []
   }
 
@@ -133,23 +133,27 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
   const type = typeof record.type === 'string' ? record.type : ''
 
   if (preferredType === 'summary_text') {
-    const summaryText = pickBestReasoningText(
+    for (const value of [
       normalizeStructuredText(record.summary_text),
       normalizeStructuredText(record.summaryText),
       type === 'summary_text' ? normalizeStructuredText(record.text) : '',
-    )
-    if (summaryText) return [summaryText]
+    ]) {
+      const summaryText = normalizeReasoningFragment(value)
+      if (summaryText) return [summaryText]
+    }
   }
 
   if (preferredType === 'reasoning_text') {
-    const reasoningText = pickBestReasoningText(
+    for (const value of [
       normalizeStructuredText(record.reasoning_text),
       normalizeStructuredText(record.reasoningText),
       normalizeStructuredText(record.reasoning_content),
       normalizeStructuredText(record.reasoningContent),
       type === 'reasoning_text' ? normalizeStructuredText(record.text) : '',
-    )
-    if (reasoningText) return [reasoningText]
+    ]) {
+      const reasoningText = normalizeReasoningFragment(value)
+      if (reasoningText) return [reasoningText]
+    }
   }
 
   if (preferredType && type && type !== preferredType) {
@@ -162,7 +166,7 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
   }
 
   if (!preferredType || !type || type === preferredType) {
-    const text = preferredType ? normalizeReasoningText(normalizeStructuredText(record.text)) : normalizeStructuredText(record.text)
+    const text = preferredType ? normalizeReasoningFragment(normalizeStructuredText(record.text)) : normalizeStructuredText(record.text)
     if (text) {
       return [text]
     }
@@ -176,7 +180,7 @@ function normalizeTextParts(value: unknown, preferredType?: 'summary_text' | 're
 }
 
 function extractSummaryText(value: unknown) {
-  return normalizeReasoningText(joinText(normalizeTextParts(value, 'summary_text')))
+  return joinReasoningText(normalizeTextParts(value, 'summary_text'))
 }
 
 function extractDetailedReasoningText(value: unknown) {
@@ -186,17 +190,19 @@ function extractDetailedReasoningText(value: unknown) {
 
   const typedParts = normalizeTextParts(value, 'reasoning_text')
   if (typedParts.length > 0) {
-    return normalizeReasoningText(joinText(typedParts))
+    return joinReasoningText(typedParts)
   }
 
   if (Array.isArray(value)) {
-    return normalizeReasoningText(joinText(value.map((item) => normalizeStructuredText(item))))
+    return joinReasoningText(value.map((item) => normalizeStructuredText(item)))
   }
 
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>
     if (record.content != null) {
-      const contentText = normalizeReasoningText(normalizeStructuredText(record.content))
+      const contentText = Array.isArray(record.content)
+        ? joinReasoningText(record.content.map((item) => normalizeStructuredText(item)))
+        : normalizeReasoningText(normalizeStructuredText(record.content))
       if (contentText) return contentText
     }
     if (record.text != null) {
@@ -534,8 +540,57 @@ function extractUnifiedReasoningText(source: Record<string, unknown>) {
   return mergeReasoningText(summary, details)
 }
 
+function normalizeReasoningFragmentValue(value: unknown) {
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return normalizeReasoningFragment(String(value))
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeReasoningFragment(normalizeStructuredText(item))).filter(Boolean).join('')
+  }
+
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>
+    if (record.content != null) {
+      if (Array.isArray(record.content)) {
+        return record.content.map((item) => normalizeReasoningFragment(normalizeStructuredText(item))).filter(Boolean).join('')
+      }
+      const contentText = normalizeReasoningFragment(normalizeStructuredText(record.content))
+      if (contentText) return contentText
+    }
+    if (record.text != null) {
+      const text = normalizeReasoningFragment(normalizeStructuredText(record.text))
+      if (text) return text
+    }
+  }
+
+  return ''
+}
+
 function extractReasoningDelta(delta: Record<string, unknown>) {
-  return extractUnifiedReasoningText(delta)
+  const reasoningObject =
+    delta.reasoning && typeof delta.reasoning === 'object' ? (delta.reasoning as Record<string, unknown>) : null
+
+  for (const value of [
+    normalizeReasoningFragmentValue(delta.reasoning_details),
+    normalizeReasoningFragmentValue(delta.reasoningDetails),
+    normalizeReasoningFragmentValue(delta.thinking),
+    normalizeReasoningFragmentValue(delta.reasoning_content),
+    normalizeReasoningFragmentValue(delta.reasoningContent),
+    normalizeReasoningFragmentValue(delta.reasoning_text),
+    normalizeReasoningFragmentValue(delta.reasoningText),
+    normalizeReasoningFragmentValue(delta.reasoning_message),
+    normalizeReasoningFragmentValue(typeof delta.reasoning === 'string' ? delta.reasoning : ''),
+    normalizeReasoningFragmentValue(reasoningObject?.content),
+    normalizeReasoningFragmentValue(reasoningObject?.details),
+    normalizeReasoningFragmentValue(reasoningObject?.text),
+    normalizeReasoningFragmentValue(reasoningObject?.reasoning_text),
+  ]) {
+    const normalized = normalizeReasoningFragment(value)
+    if (normalized) return normalized
+  }
+
+  return ''
 }
 
 function extractChoiceMessage(choice: Record<string, unknown>) {
@@ -595,8 +650,8 @@ function parseResponsesResult(data: Record<string, unknown>): ChatCompletionResu
     output.map((item) => extractResponseOutputText(item)).filter(Boolean).join('')
 
   const reasoningItems = output.filter((item) => isReasoningOutputItem(item))
-  const summary = joinText(reasoningItems.map((item) => extractSummaryText(item.summary)))
-  const details = joinText(reasoningItems.map((item) => extractDetailedReasoningText(item.content)))
+  const summary = joinReasoningText(reasoningItems.map((item) => extractSummaryText(item.summary)))
+  const details = joinReasoningText(reasoningItems.map((item) => extractDetailedReasoningText(item.content)))
   const itemReasoning = mergeReasoningText(summary, details)
 
   return {
@@ -614,10 +669,10 @@ function parseAnthropicMessageResult(message: { content?: AnthropicContentBlockL
       .map((block) => normalizeStructuredText(block.text))
       .join(''),
     reasoning_details:
-      joinText(
+      joinReasoningText(
         contentBlocks
           .filter((block) => block.type === 'thinking')
-          .map((block) => normalizeReasoningText(normalizeStructuredText(block.thinking)))
+          .map((block) => normalizeReasoningFragment(normalizeStructuredText(block.thinking)))
           .filter(Boolean),
       ) || null,
   }
@@ -652,7 +707,7 @@ function extractAnthropicStreamDelta(
     }
 
     if (blockType === 'thinking') {
-      const text = normalizeReasoningText(normalizeStructuredText(block.thinking))
+      const text = normalizeReasoningFragment(normalizeStructuredText(block.thinking))
       return text ? { delta_type: 'reasoning', text } : null
     }
 
@@ -678,7 +733,7 @@ function extractAnthropicStreamDelta(
   }
 
   if (blockType === 'thinking' && deltaType === 'thinking_delta') {
-    const text = normalizeReasoningText(normalizeStructuredText(delta.thinking))
+    const text = normalizeReasoningFragment(normalizeStructuredText(delta.thinking))
     return text ? { delta_type: 'reasoning', text } : null
   }
 
@@ -774,7 +829,7 @@ function buildDiagnostics(
 function extractEventText(payload: Record<string, unknown>) {
   const part = payload.part && typeof payload.part === 'object' ? (payload.part as Record<string, unknown>) : null
 
-  return pickBestReasoningText(
+  for (const value of [
     normalizeStructuredText(payload.delta),
     normalizeStructuredText(payload.text),
     normalizeStructuredText(part?.delta),
@@ -786,7 +841,12 @@ function extractEventText(payload: Record<string, unknown>) {
     normalizeStructuredText(payload.reasoning_summary),
     normalizeStructuredText(part?.summary),
     normalizeStructuredText(part?.content),
-  )
+  ]) {
+    const normalized = normalizeReasoningFragment(value)
+    if (normalized) return normalized
+  }
+
+  return ''
 }
 
 async function doFetch(
