@@ -103,7 +103,7 @@ const messages = {
     stageStatusError: '出错',
     stageStatusComplete: '已完成',
     stageStatusStopped: '已停止',
-    stageStatusLive: '直播中',
+    stageStatusLive: '进行中',
     conversationSingleMessageHint: '继续提问请新建对话。',
     conversationEditPrompt: '编辑',
     conversationRunAgain: '重新运行',
