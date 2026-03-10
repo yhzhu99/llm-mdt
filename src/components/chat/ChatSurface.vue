@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { LoaderCircle, MessageSquareText, Pencil, Settings2, Square } from 'lucide-vue-next'
+import { LoaderCircle, MessageSquareText, Pencil, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils'
 import Button from '@/components/ui/button/Button.vue'
@@ -314,7 +314,6 @@ const handleEditKeydown = (event: KeyboardEvent) => {
 }
 
 const isLatestUserMessage = (index: number) => latestUserEntry.value?.index === index
-const isLatestAssistantMessage = (index: number) => latestAssistantEntry.value?.index === index
 const stageSectionId = (messageId: string | undefined, stage: StageKey) => `${messageId || 'assistant'}-${stage}`
 const stageSummaryLabel = (stage: StageKey) => {
   if (stage === 'stage1') return `${t('stage1Title')} · ${t('stage1Subtitle')}`
@@ -536,6 +535,8 @@ watch(
               }"
               :stage-status="stageStatuses(latestAssistantEntry.message, latestAssistantEntry.index)"
               :available-stages="stageAvailability(latestAssistantEntry.message, latestAssistantEntry.index)"
+              :show-stop-button="runStatus === 'running'"
+              @stop="emit('stop')"
             />
           </div>
 
@@ -627,18 +628,6 @@ watch(
             </div>
 
             <div v-else class="min-w-0 space-y-4">
-              <div v-if="isLatestAssistantMessage(index) && runStatus === 'running'" class="flex justify-end">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  class="h-8 rounded-full px-3"
-                  @click="emit('stop')"
-                >
-                  <Square :size="14" />
-                  {{ t('conversationStop') }}
-                </Button>
-              </div>
-
               <section
                 v-if="shouldRenderStageSection(message as AssistantMessage, index, 'stage1')"
                 :id="stageSectionId((message as AssistantMessage).id, 'stage1')"
@@ -751,6 +740,8 @@ watch(
             }"
             :stage-status="stageStatuses(latestAssistantEntry.message, latestAssistantEntry.index)"
             :available-stages="stageAvailability(latestAssistantEntry.message, latestAssistantEntry.index)"
+            :show-stop-button="runStatus === 'running'"
+            @stop="emit('stop')"
           />
         </aside>
       </div>

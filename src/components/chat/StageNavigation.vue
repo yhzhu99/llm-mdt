@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Crown, Scale, Sparkles } from 'lucide-vue-next'
+import { Crown, Scale, Sparkles, Square } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils'
 
@@ -12,13 +12,19 @@ const props = withDefaults(
     stageIds?: Partial<Record<StageKey, string>>
     stageStatus?: Partial<Record<StageKey, StageStatus>>
     availableStages?: Partial<Record<StageKey, boolean>>
+    showStopButton?: boolean
   }>(),
   {
     stageIds: () => ({}),
     stageStatus: () => ({}),
     availableStages: () => ({}),
+    showStopButton: false,
   },
 )
+
+const emit = defineEmits<{
+  (event: 'stop'): void
+}>()
 
 const { t } = useI18n()
 const navRef = ref<HTMLElement | null>(null)
@@ -198,6 +204,20 @@ onBeforeUnmount(() => {
           </span>
         </span>
         <span :class="stageDotClass(stage.status)" />
+      </button>
+    </div>
+
+    <div
+      v-if="props.showStopButton"
+      class="mt-2 border-t border-border/70 pt-2"
+    >
+      <button
+        type="button"
+        class="inline-flex w-full items-center justify-center gap-2 rounded-[1rem] border border-rose-500/20 bg-rose-500/10 px-3 py-2.5 text-sm font-medium text-rose-700 transition-colors hover:bg-rose-500/15"
+        @click="emit('stop')"
+      >
+        <Square :size="14" />
+        {{ t('conversationStop') }}
       </button>
     </div>
   </nav>
