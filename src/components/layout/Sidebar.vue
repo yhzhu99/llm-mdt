@@ -172,6 +172,7 @@ const startConversationRename = (conversation: ConversationSummary) => {
 }
 
 const submitConversationRename = (conversationId: string, fallbackTitle: string) => {
+  if (renamingConversationId.value !== conversationId) return
   const title = draftConversationTitle.value.trim() || fallbackTitle
   renamingConversationId.value = null
   draftConversationTitle.value = ''
@@ -377,7 +378,7 @@ const handleProjectRename = (projectId: string, title: string) => {
                         class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
                         @blur="submitConversationRename(conversation.id, displayConversationTitle(conversation))"
                         @keydown.enter.prevent="submitConversationRename(conversation.id, displayConversationTitle(conversation))"
-                        @keydown.esc.prevent="renamingConversationId = null"
+                        @keydown.esc.prevent="renamingConversationId = null; draftConversationTitle = ''"
                       />
                       <template v-else>
                         <div class="flex items-center gap-2">

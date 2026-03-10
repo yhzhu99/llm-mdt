@@ -47,6 +47,7 @@ const startProjectRename = (project: ProjectSummary) => {
 }
 
 const submitProjectRename = (projectId: string, fallbackTitle: string) => {
+  if (renamingProjectId.value !== projectId) return
   const title = draftProjectName.value.trim() || fallbackTitle
   renamingProjectId.value = null
   draftProjectName.value = ''
@@ -114,7 +115,7 @@ watch(
             class="w-full rounded-lg border border-input bg-background px-3 py-2 text-sm text-foreground outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
             @blur="submitProjectRename(project.id, displayProjectName(project))"
             @keydown.enter.prevent="submitProjectRename(project.id, displayProjectName(project))"
-            @keydown.esc.prevent="renamingProjectId = null"
+            @keydown.esc.prevent="renamingProjectId = null; draftProjectName = ''"
           />
           <template v-else>
             <div class="truncate text-sm font-medium text-foreground">
