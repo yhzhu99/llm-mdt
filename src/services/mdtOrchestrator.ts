@@ -121,10 +121,22 @@ function getResponseLabel(locale: AppLocale, value: number | string) {
   return locale === 'zh-CN' ? `回答${letter}` : `Response ${letter}`
 }
 
+function extractParsedRankingLetter(label: string, locale: AppLocale) {
+  const source = String(label || '').trim()
+  const localeMatch =
+    locale === 'zh-CN' ? source.match(/回答\s*([A-Z])/i) : source.match(/Response\s*([A-Z])/i)
+
+  if (localeMatch?.[1]) {
+    return localeMatch[1]
+  }
+
+  return source.match(/\b([A-Z])\b/i)?.[1] || null
+}
+
 function normalizeParsedRankingLabel(label: string, locale: AppLocale) {
-  const letterMatch = String(label || '').match(/[A-Z]/i)
-  if (!letterMatch) return null
-  return getResponseLabel(locale, letterMatch[0])
+  const letter = extractParsedRankingLetter(label, locale)
+  if (!letter) return null
+  return getResponseLabel(locale, letter)
 }
 
 function getRankingHeaderPattern(locale: AppLocale) {

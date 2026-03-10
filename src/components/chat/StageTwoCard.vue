@@ -4,6 +4,8 @@ import { ArrowDownWideNarrow, LoaderCircle } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
+import { calculateRankingDetails, parseRankingFromText } from '@/services/mdtOrchestrator'
+import type { AppLocale } from '@/types'
 import StageCard from './StageCard.vue'
 import { cn, pickBestReasoningText } from '@/utils'
 
@@ -40,10 +42,24 @@ const props = defineProps<{
   councilOrder?: string[]
 }>()
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const activeTab = ref(0)
 const showThinking = ref(false)
 const manualSelection = ref(false)
+
+const detectRankingLocale = (ranking: Pick<StageTwoRanking, 'ranking' | 'parsed_ranking'>): AppLocale => {
+  const source = `${ranking.ranking}\n${(ranking.parsed_ranking || []).join('\n')}`
+  if (/回答\s*[A-Z]|最终排名/i.test(source)) return 'zh-CN'
+  if (/Response\s*[A-Z]|FINAL RANKING/i.test(source)) return 'en'
+  return locale.value
+}
+
+const hasValidParsedRanking = (ranking: StageTwoRanking) => {
+  const parsedRanking = ranking.parsed_ranking || []
+  if (parsedRanking.length === 0) return false
+  if (!props.labelToModel) return true
+  return parsedRanking.every((label) => Boolean(props.labelToModel?.[label]))
+}
 
 const tabs = computed(() => {
   const preferred = props.councilOrder?.filter(Boolean) ?? []
@@ -59,10 +75,35 @@ const tabs = computed(() => {
 })
 
 const activeModel = computed(() => tabs.value[Math.min(activeTab.value, Math.max(tabs.value.length - 1, 0))] || '')
+const effectiveRankings = computed(() =>
+  props.rankings.map((ranking) =>
+    hasValidParsedRanking(ranking)
+      ? ranking
+      : {
+          ...ranking,
+          parsed_ranking: parseRankingFromText(ranking.ranking, detectRankingLocale(ranking)),
+        },
+  ),
+)
 const activeRanking = computed(
-  () => props.rankings.find((ranking) => ranking.model === activeModel.value) || null,
+  () => effectiveRankings.value.find((ranking) => ranking.model === activeModel.value) || null,
 )
 const activeStream = computed(() => (activeModel.value ? props.streamState?.[activeModel.value] : undefined))
+const effectiveAggregateRankings = computed(() => {
+  if (!props.labelToModel || effectiveRankings.value.length === 0) {
+    return props.aggregateRankings || []
+  }
+
+  return calculateRankingDetails(
+    effectiveRankings.value.map((ranking) => ({
+      model: ranking.model,
+      ranking: ranking.ranking,
+      parsed_ranking: ranking.parsed_ranking || [],
+    })),
+    props.labelToModel,
+    locale.value,
+  ).aggregate_rankings
+})
 
 const deAnonymizeText = (text: string) => {
   let result = text
@@ -99,7 +140,7 @@ const shortModelName = (model: string) => model.split('/')[1] || model
 
 const stageStatus = computed(() => {
   if (tabs.value.some((model) => modelStatus(model) === 'running')) return 'running' as const
-  if (props.rankings.length > 0) return 'complete' as const
+  if (effectiveRankings.value.length > 0) return 'complete' as const
   if (tabs.value.some((model) => modelStatus(model) === 'error')) return 'error' as const
   return 'waiting' as const
 })
@@ -285,21 +326,18 @@ const selectModel = (index: number) => {
         </ol>
       </div>
 
-      <div
-        v-if="props.aggregateRankings?.length"
-        class="rounded-[1.25rem] border border-border/60 bg-muted/15 px-4 py-4"
-      >
+      <div v-if="effectiveAggregateRankings.length" class="rounded-[1.25rem] border border-border/60 bg-muted/15 px-4 py-4">
         <div class="mb-4 flex items-center justify-between gap-3">
           <div class="text-sm font-semibold text-foreground">{{ t('stageAggregateRankings') }}</div>
           <CopyButton
             icon-only
             :title="t('copyAggregateRankings')"
-            :get-text="() => JSON.stringify(props.aggregateRankings, null, 2)"
+            :get-text="() => JSON.stringify(effectiveAggregateRankings, null, 2)"
           />
         </div>
         <div class="grid gap-3 md:grid-cols-2">
           <div
-            v-for="(aggregate, index) in props.aggregateRankings"
+            v-for="(aggregate, index) in effectiveAggregateRankings"
             :key="aggregate.model"
             class="rounded-[1rem] border border-border/60 bg-background/70 px-4 py-3"
           >
