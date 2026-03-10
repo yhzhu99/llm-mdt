@@ -144,29 +144,97 @@ ${getFinalRankingHeader(locale)}:
 Task: first provide the per-response evaluation, then provide the final ranking.`
 }
 
-function buildChairmanPrompt(userQuery: string, stage1Results: Stage1Result[], stage2Results: Stage2Result[]) {
-  const stage1Text = stage1Results.map((result) => `Model: ${result.model}\nResponse: ${result.response}`).join('\n\n')
+function buildAggregateRankingSummary(metadata: RankingMetadata | null, locale: AppLocale) {
+  if (!metadata?.aggregate_rankings?.length) {
+    return locale === 'zh-CN' ? '暂无汇总排名数据。' : 'No aggregate ranking summary is available.'
+  }
 
-  const stage2Text = stage2Results.map((result) => `Model: ${result.model}\nRanking: ${result.ranking}`).join('\n\n')
+  if (locale === 'zh-CN') {
+    return metadata.aggregate_rankings
+      .map(
+        (item, index) =>
+          `${index + 1}. ${item.model}，平均名次 ${item.average_rank.toFixed(2)}，有效票数 ${item.rankings_count}`,
+      )
+      .join('\n')
+  }
 
-  return `You are the Chairman of an LLM MDT. Multiple AI models have provided responses to a user's question, and then ranked each other's responses.
-
-Original Question: ${userQuery}
-
-STAGE 1 - Individual Responses:
-${stage1Text}
-
-STAGE 2 - Peer Rankings:
-${stage2Text}
-
-Your task as Chairman is to synthesize all of this information into a single, comprehensive, accurate answer to the user's original question. Consider:
-- The individual responses and their insights
-- The peer rankings and what they reveal about response quality
-- Any patterns of agreement or disagreement
-
-Provide a clear, well-reasoned final answer that represents the council's collective wisdom:`
+  return metadata.aggregate_rankings
+    .map(
+      (item, index) =>
+        `${index + 1}. ${item.model}, average rank ${item.average_rank.toFixed(2)}, ballots ${item.rankings_count}`,
+    )
+    .join('\n')
 }
 
+function buildChairmanPrompt(
+  userQuery: string,
+  stage1Results: Stage1Result[],
+  stage2Results: Stage2Result[],
+  metadata: RankingMetadata | null,
+  locale: AppLocale,
+) {
+  if (locale === 'zh-CN') {
+    const stage1Text = stage1Results.map((result) => `模型：${result.model}\n回答：${result.response}`).join('\n\n')
+    const stage2Text = stage2Results.map((result) => `模型：${result.model}\n评议与排名：${result.ranking}`).join('\n\n')
+    const aggregateSummary = buildAggregateRankingSummary(metadata, locale)
+
+    return `你是 LLM MDT 的主席，负责综合各模型的回答、互评与投票信息，给出最终定稿。
+
+要求：
+1. 必须先总结前面的讨论情况，再给出最终综合回答。
+2. 讨论总结需要概括：各家回答的主要优点与不足、投票/排名信号、明显共识、关键分歧。
+3. 如果存在分歧，需要简要说明你更采纳哪一类观点以及原因。
+4. 最终综合回答要吸收各家长处，修正明显错误、遗漏或表述不清之处，并直接回答用户原问题。
+5. 最终输出必须严格按以下两个标题顺序书写，不能缺少，也不要新增第三个标题：
+## 讨论与投票总结
+## 最终综合回答
+6. 第一部分保持简洁；第二部分给出完整、清晰、可执行的最终答案。
+
+原始问题：
+${userQuery}
+
+第一阶段：各模型回答
+${stage1Text}
+
+第二阶段：互评与排名
+${stage2Text}
+
+汇总排名概览：
+${aggregateSummary}
+
+任务：请先输出“## 讨论与投票总结”，再输出“## 最终综合回答”。`
+  }
+
+  const stage1Text = stage1Results.map((result) => `Model: ${result.model}\nResponse: ${result.response}`).join('\n\n')
+  const stage2Text = stage2Results.map((result) => `Model: ${result.model}\nReview and ranking: ${result.ranking}`).join('\n\n')
+  const aggregateSummary = buildAggregateRankingSummary(metadata, locale)
+
+  return `You are the chairman of an LLM MDT. Your job is to synthesize the models' answers, peer reviews, and voting signals into the final answer.
+
+Instructions:
+1. You must summarize the earlier deliberation before giving the final synthesized answer.
+2. The deliberation summary should cover: major strengths and weaknesses of the candidate answers, peer ranking signals, clear areas of agreement, and key disagreements.
+3. If there are disagreements, briefly state which view you trust more and why.
+4. The final synthesized answer should combine the best parts of the earlier responses, correct clear mistakes or omissions, and directly answer the original user question.
+5. Your final output must use exactly these two section headings in this order, with no third heading:
+## Deliberation Summary
+## Final Synthesized Answer
+6. Keep the first section concise, and make the second section complete, clear, and actionable.
+
+Original question:
+${userQuery}
+
+Stage 1 - Individual Responses:
+${stage1Text}
+
+Stage 2 - Peer Reviews and Rankings:
+${stage2Text}
+
+Aggregate ranking snapshot:
+${aggregateSummary}
+
+Task: first output "## Deliberation Summary", then output "## Final Synthesized Answer".`
+}
 
 function buildTitlePrompt(userQuery: string, locale: AppLocale) {
   if (locale === 'zh-CN') {
@@ -507,7 +575,7 @@ export async function runMdtConversationStream({
         messages: [
           {
             role: 'user',
-            content: buildChairmanPrompt(content, stage1Results, stage2Results),
+            content: buildChairmanPrompt(content, stage1Results, stage2Results, metadata, locale),
           },
         ],
         signal: options?.signal,
