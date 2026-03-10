@@ -330,7 +330,6 @@ const selectModel = (index: number) => {
               </div>
               <div class="text-right text-sm text-muted-foreground">
                 <div>{{ t('stageAverageRank', { value: aggregate.average_rank.toFixed(2) }) }}</div>
-                <div>{{ t('stageVotes', { count: aggregate.rankings_count }) }}</div>
               </div>
             </div>
           </div>
