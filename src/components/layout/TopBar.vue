@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Activity, Languages, Plus, Settings2 } from 'lucide-vue-next'
+import { Languages, Plus, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import type { AppLocale } from '@/types'
 import Button from '@/components/ui/button/Button.vue'
@@ -34,14 +34,14 @@ const { locale, t } = useI18n()
         <div
           :class="
             cn(
-              'flex h-9 w-9 items-center justify-center rounded-xl border border-border/70 bg-card/80 shadow-sm',
-              status === 'running' && 'bg-primary/10 text-primary',
-              status === 'ready' && 'bg-emerald-500/10 text-emerald-600',
-              status === 'error' && 'bg-destructive/10 text-destructive',
+              'flex h-9 w-9 items-center justify-center rounded-[1rem] bg-card/30 p-0.5',
+              status === 'running' && 'ring-2 ring-primary/20',
+              status === 'ready' && 'ring-2 ring-emerald-500/20',
+              status === 'error' && 'ring-2 ring-destructive/20',
             )
           "
         >
-          <Activity :size="16" />
+          <img src="/logo.svg" alt="" class="h-8 w-8 rounded-[0.9rem] shadow-sm" />
         </div>
         <div class="min-w-0">
           <div class="truncate text-sm font-semibold text-foreground">{{ title || t('appNamePrimary') }}</div>

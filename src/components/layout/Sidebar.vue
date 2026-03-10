@@ -219,9 +219,7 @@ const handleProjectRename = (projectId: string, title: string) => {
           "
           @click="emit('go-home')"
         >
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm transition-transform group-hover:scale-[1.02]">
-            <MessageSquareText :size="18" />
-          </div>
+          <img src="/logo.svg" alt="" class="h-10 w-10 shrink-0 rounded-2xl shadow-sm transition-transform group-hover:scale-[1.02]" />
           <div v-if="!isCollapsed" class="min-w-0">
             <div class="truncate text-sm font-semibold text-foreground">
               {{ t('appNamePrimary') }}
