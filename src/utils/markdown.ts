@@ -1,5 +1,6 @@
 import DOMPurify from 'dompurify'
-import { Marked, Renderer } from 'marked'
+import katex from 'katex'
+import { Marked, Renderer, type TokenizerAndRendererExtension, type Tokens } from 'marked'
 import markedKatex from 'marked-katex-extension'
 
 const LANGUAGE_ALIASES: Record<string, string> = {
@@ -28,6 +29,87 @@ const normalizeLanguage = (lang?: string): string | null => {
   return LANGUAGE_ALIASES[raw] || raw
 }
 
+const INLINE_PAREN_MATH_RULE = /^\\\(((?:\\.|[^\\\n])+?)\\\)/
+const INLINE_BRACKET_MATH_RULE = /^\\\[(([^\n\\]|\\.)+?)\\\]/
+const BLOCK_BRACKET_MATH_RULE = /^\\\[(?:[ \t]*\n)?([\s\S]+?)(?:\n[ \t]*)?\\\](?:\n|$)/
+
+const findMathDelimiter = (src: string, delimiter: string) => {
+  const index = src.indexOf(delimiter)
+  return index >= 0 ? index : undefined
+}
+
+const renderMathToken = (token: Tokens.Generic, displayMode: boolean, trailingNewline = false) => {
+  const html = katex.renderToString(String(token.text || ''), {
+    throwOnError: false,
+    displayMode,
+  })
+
+  return trailingNewline ? `${html}\n` : html
+}
+
+const inlineParenMathExtension: TokenizerAndRendererExtension = {
+  name: 'inlineParenMath',
+  level: 'inline',
+  start(src) {
+    return findMathDelimiter(src, '\\(')
+  },
+  tokenizer(src) {
+    const match = src.match(INLINE_PAREN_MATH_RULE)
+    if (!match) return undefined
+
+    return {
+      type: 'inlineParenMath',
+      raw: match[0],
+      text: match[1],
+    }
+  },
+  renderer(token) {
+    return renderMathToken(token, false)
+  },
+}
+
+const inlineBracketMathExtension: TokenizerAndRendererExtension = {
+  name: 'inlineBracketMath',
+  level: 'inline',
+  start(src) {
+    return findMathDelimiter(src, '\\[')
+  },
+  tokenizer(src) {
+    const match = src.match(INLINE_BRACKET_MATH_RULE)
+    if (!match) return undefined
+
+    return {
+      type: 'inlineBracketMath',
+      raw: match[0],
+      text: match[1],
+    }
+  },
+  renderer(token) {
+    return renderMathToken(token, true)
+  },
+}
+
+const blockBracketMathExtension: TokenizerAndRendererExtension = {
+  name: 'blockBracketMath',
+  level: 'block',
+  start(src) {
+    return findMathDelimiter(src, '\\[')
+  },
+  tokenizer(src) {
+    const match = src.match(BLOCK_BRACKET_MATH_RULE)
+    if (!match) return undefined
+
+    return {
+      type: 'blockBracketMath',
+      raw: match[0],
+      text: match[1],
+    }
+  },
+  renderer(token) {
+    return renderMathToken(token, true, true)
+  },
+}
+
 const renderer = new Renderer()
 renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
   const normalizedLang = normalizeLanguage(lang)
@@ -50,6 +132,14 @@ const markdownParser = new Marked({
   gfm: true,
   breaks: true,
   renderer,
+})
+
+markdownParser.use({
+  extensions: [
+    blockBracketMathExtension,
+    inlineBracketMathExtension,
+    inlineParenMathExtension,
+  ],
 })
 
 markdownParser.use(
