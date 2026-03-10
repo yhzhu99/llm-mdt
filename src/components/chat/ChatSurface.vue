@@ -185,10 +185,10 @@ const heroTitleLines = computed(() => {
 })
 const heroTitleClass = computed(() =>
   !props.providerConfigured
-    ? 'max-w-[12ch]'
+    ? 'max-w-none whitespace-nowrap text-[clamp(1.5rem,7vw,4.5rem)]'
     : locale.value === 'en'
-      ? 'max-w-[22ch]'
-      : 'max-w-none md:whitespace-nowrap',
+      ? 'max-w-[22ch] text-[clamp(2.25rem,4.4vw,4.5rem)]'
+      : 'max-w-none text-[clamp(2.25rem,4.4vw,4.5rem)] md:whitespace-nowrap',
 )
 
 const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
@@ -478,7 +478,7 @@ watch(
           <div class="space-y-2">
             <h2
               :class="heroTitleClass"
-              class="text-[clamp(2.25rem,4.4vw,4.5rem)] font-semibold leading-[0.95] tracking-[-0.05em] text-foreground"
+              class="font-semibold leading-[0.95] tracking-[-0.05em] text-foreground"
             >
               <span
                 v-for="(line, index) in heroTitleLines"
