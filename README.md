@@ -90,7 +90,7 @@ Example base URLs:
 - `https://api.openai.com/v1`
 - any other OpenAI-compatible endpoint you control
 
-LLM MDT will first try a Responses-style request with reasoning enabled, then automatically fall back to standard chat completions when needed.
+LLM MDT will first try a Responses-style request with reasoning enabled, then automatically fall back to standard chat completions when needed. When the configured provider is ZenMux and a model name starts with `anthropic/`, LLM MDT routes that request through ZenMux's Anthropic Messages API so Claude thinking blocks can be surfaced correctly. Claude 4.6 models use adaptive thinking; older Claude models use budgeted extended thinking.
 
 ## Local Storage Model
 

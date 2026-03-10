@@ -2,6 +2,7 @@
 import { computed, ref } from 'vue'
 import { Crown, LoaderCircle } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
+import type { ChatCompletionDiagnostics } from '@/types'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
 import StageCard from './StageCard.vue'
@@ -11,20 +12,7 @@ interface StageThreeResult {
   model: string
   response: string
   reasoning_details?: string | null
-  diagnostics?: {
-    configured_mode: 'auto' | 'responses' | 'chat-completions'
-    selected_mode: 'responses' | 'chat-completions' | null
-    endpoint: string
-    fallback_used: boolean
-    attempts: Array<{ mode: 'responses' | 'chat-completions'; endpoint: string; status: 'succeeded' | 'failed'; error?: string }>
-    stream_event_types: string[]
-    reasoning_event_count: number
-    content_event_count: number
-    reasoning_text_chars: number
-    content_text_chars: number
-    saw_reasoning: boolean
-    reasoning_details_present: boolean
-  } | null
+  diagnostics?: ChatCompletionDiagnostics | null
 }
 
 interface StageThreeStreamState {

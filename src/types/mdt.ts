@@ -6,10 +6,11 @@ export type ConversationRunStage = 'stage1' | 'stage2' | 'stage3' | null
 export type MdtTargetStage = Exclude<ConversationRunStage, null>
 export type ConversationRunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stopped'
 export type RequestMode = 'responses' | 'chat-completions'
+export type ResolvedRequestMode = RequestMode | 'anthropic-messages'
 export type ProviderRequestMode = 'auto' | RequestMode
 
 export interface RequestAttemptDiagnostic {
-  mode: RequestMode
+  mode: ResolvedRequestMode
   endpoint: string
   status: 'succeeded' | 'failed'
   error?: string
@@ -17,7 +18,7 @@ export interface RequestAttemptDiagnostic {
 
 export interface ChatCompletionDiagnostics {
   configured_mode: ProviderRequestMode
-  selected_mode: RequestMode | null
+  selected_mode: ResolvedRequestMode | null
   endpoint: string
   fallback_used: boolean
   attempts: RequestAttemptDiagnostic[]

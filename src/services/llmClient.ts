@@ -1,3 +1,4 @@
+import Anthropic from '@anthropic-ai/sdk'
 import type {
   ChatCompletionClient,
   ChatCompletionDiagnostics,
@@ -6,6 +7,7 @@ import type {
   ChatCompletionStreamEvent,
   ProviderRequestMode,
   ProviderSettings,
+  ResolvedRequestMode,
   RequestAttemptDiagnostic,
   RequestMode,
 } from '@/types'
@@ -14,6 +16,32 @@ import { isAbortError, normalizeReasoningText, pickBestReasoningText } from '@/u
 interface RequestConfig {
   endpoint: string
   mode: RequestMode
+}
+
+interface AnthropicRequestConfig {
+  endpoint: string
+  mode: 'anthropic-messages'
+}
+
+type RuntimeRequestConfig = RequestConfig | AnthropicRequestConfig
+
+interface AnthropicContentBlockLike {
+  type?: string
+  text?: string
+  thinking?: string
+}
+
+interface AnthropicStreamDeltaLike {
+  type?: string
+  text?: string
+  thinking?: string
+}
+
+interface AnthropicStreamEventLike {
+  type?: string
+  index?: number
+  content_block?: AnthropicContentBlockLike
+  delta?: AnthropicStreamDeltaLike
 }
 
 interface StreamDiagnosticsAccumulator {
@@ -44,6 +72,11 @@ class RequestError extends Error {
 
 const DEFAULT_REASONING_EFFORT = 'high'
 const DEFAULT_REASONING_SUMMARY = 'auto'
+const DEFAULT_ANTHROPIC_MAX_TOKENS = 16000
+const DEFAULT_ANTHROPIC_THINKING_BUDGET = 10000
+const ANTHROPIC_REQUEST_MODE = 'anthropic-messages' as const
+const ZENMUX_ANTHROPIC_PATH = '/api/anthropic'
+const anthropicClientCache = new Map<string, Anthropic>()
 
 function createRequestError(message: string, status = 0, body = '') {
   return new RequestError(message, status, body)
@@ -221,6 +254,68 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '')
 }
 
+function isAnthropicModel(model: string) {
+  return String(model || '')
+    .trim()
+    .toLowerCase()
+    .startsWith('anthropic/')
+}
+
+function supportsAdaptiveThinking(model: string) {
+  const normalized = String(model || '')
+    .trim()
+    .toLowerCase()
+
+  return (
+    /(?:^|\/)claude-4(?:[.-]6)-(?:opus|sonnet)(?:$|[-/])/.test(normalized) ||
+    /(?:^|\/)claude-(?:opus|sonnet)-4(?:[.-]6)(?:$|[-/])/.test(normalized)
+  )
+}
+
+function isZenmuxHost(hostname: string) {
+  return hostname === 'zenmux.ai' || hostname.endsWith('.zenmux.ai')
+}
+
+function normalizeAnthropicBasePath(pathname: string) {
+  const normalized = trimTrailingSlash(pathname || '')
+  if (normalized.endsWith('/v1/messages')) {
+    return normalized.slice(0, -'/v1/messages'.length)
+  }
+  if (normalized.endsWith('/messages')) {
+    return normalized.slice(0, -'/messages'.length)
+  }
+  return normalized
+}
+
+function resolveAnthropicBaseUrl(baseUrl: string) {
+  const trimmed = trimTrailingSlash(String(baseUrl || '').trim())
+  if (!trimmed) return ''
+
+  try {
+    const url = new URL(trimmed)
+    const normalizedPath = normalizeAnthropicBasePath(url.pathname)
+
+    if (normalizedPath === ZENMUX_ANTHROPIC_PATH) {
+      return `${url.origin}${ZENMUX_ANTHROPIC_PATH}`
+    }
+
+    if (isZenmuxHost(url.hostname) && /^\/api\/v1(?:\/chat\/completions|\/responses)?$/.test(url.pathname)) {
+      return `${url.origin}${ZENMUX_ANTHROPIC_PATH}`
+    }
+  } catch {
+    return ''
+  }
+
+  return ''
+}
+
+function isAnthropicBaseUrl(baseUrl: string) {
+  const trimmed = trimTrailingSlash(String(baseUrl || '').trim())
+  const resolved = resolveAnthropicBaseUrl(baseUrl)
+  if (!trimmed || !resolved) return false
+  return trimmed === resolved || trimmed === `${resolved}/v1/messages` || trimmed === `${resolved}/messages`
+}
+
 function resolveEndpoint(baseUrl: string, mode: RequestMode) {
   const trimmed = trimTrailingSlash(String(baseUrl || '').trim())
 
@@ -238,7 +333,11 @@ function resolveEndpoint(baseUrl: string, mode: RequestMode) {
 }
 
 function createRequestConfigs(baseUrl: string, preferredMode: ProviderRequestMode = 'auto'): RequestConfig[] {
-  const orderedModes: RequestMode[] = preferredMode === 'auto' ? ['responses'] : [preferredMode]
+  if (isAnthropicBaseUrl(baseUrl)) {
+    return []
+  }
+
+  const orderedModes: RequestMode[] = preferredMode === 'auto' ? ['responses', 'chat-completions'] : [preferredMode]
   const candidates = orderedModes.map((mode) => ({ mode, endpoint: resolveEndpoint(baseUrl, mode) }))
 
   const seen = new Set<string>()
@@ -294,6 +393,98 @@ function buildPayload(
   }
 
   return payload
+}
+
+function createAnthropicRequestConfig(settings: ProviderSettings, model: string): AnthropicRequestConfig | null {
+  if (!isAnthropicModel(model)) return null
+
+  const endpoint = resolveAnthropicBaseUrl(settings.baseUrl)
+  if (!endpoint) return null
+
+  return {
+    endpoint,
+    mode: ANTHROPIC_REQUEST_MODE,
+  }
+}
+
+function buildAnthropicThinkingConfig(model: string): Anthropic.ThinkingConfigParam {
+  if (supportsAdaptiveThinking(model)) {
+    return { type: 'adaptive' }
+  }
+
+  return {
+    type: 'enabled',
+    budget_tokens: Math.min(DEFAULT_ANTHROPIC_THINKING_BUDGET, DEFAULT_ANTHROPIC_MAX_TOKENS - 1),
+  }
+}
+
+function buildAnthropicMessages(messages: ChatCompletionOptions['messages']) {
+  const systemParts: string[] = []
+  const conversationalMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      if (message.content.trim()) {
+        systemParts.push(message.content.trim())
+      }
+      continue
+    }
+
+    conversationalMessages.push({
+      role: message.role,
+      content: message.content,
+    })
+  }
+
+  return {
+    system: joinText(systemParts),
+    messages: conversationalMessages,
+  }
+}
+
+function buildAnthropicMessageParams(
+  { model, messages }: ChatCompletionOptions,
+  stream: false,
+): Anthropic.MessageCreateParamsNonStreaming
+function buildAnthropicMessageParams(
+  { model, messages }: ChatCompletionOptions,
+  stream: true,
+): Anthropic.MessageCreateParamsStreaming
+function buildAnthropicMessageParams({ model, messages }: ChatCompletionOptions, stream: boolean) {
+  const prepared = buildAnthropicMessages(messages)
+  const payload: Anthropic.MessageCreateParamsNonStreaming = {
+    model,
+    messages: prepared.messages,
+    max_tokens: DEFAULT_ANTHROPIC_MAX_TOKENS,
+    thinking: buildAnthropicThinkingConfig(model),
+  }
+
+  if (prepared.system) {
+    payload.system = prepared.system
+  }
+
+  if (stream) {
+    return {
+      ...payload,
+      stream: true,
+    }
+  }
+
+  return payload
+}
+
+function getAnthropicClient(settings: ProviderSettings, requestConfig: AnthropicRequestConfig) {
+  const cacheKey = `${requestConfig.endpoint}::${settings.apiKey}`
+  const cached = anthropicClientCache.get(cacheKey)
+  if (cached) return cached
+
+  const client = new Anthropic({
+    apiKey: settings.apiKey,
+    baseURL: requestConfig.endpoint,
+    dangerouslyAllowBrowser: true,
+  })
+  anthropicClientCache.set(cacheKey, client)
+  return client
 }
 
 function extractPayloadsFromBlock(block: string) {
@@ -414,6 +605,86 @@ function parseResponsesResult(data: Record<string, unknown>): ChatCompletionResu
   }
 }
 
+function parseAnthropicMessageResult(message: { content?: AnthropicContentBlockLike[] }): ChatCompletionResult {
+  const contentBlocks = Array.isArray(message.content) ? message.content : []
+
+  return {
+    content: contentBlocks
+      .filter((block) => block.type === 'text')
+      .map((block) => normalizeStructuredText(block.text))
+      .join(''),
+    reasoning_details:
+      joinText(
+        contentBlocks
+          .filter((block) => block.type === 'thinking')
+          .map((block) => normalizeReasoningText(normalizeStructuredText(block.thinking)))
+          .filter(Boolean),
+      ) || null,
+  }
+}
+
+function describeAnthropicStreamEventType(event: AnthropicStreamEventLike) {
+  const eventType = normalizeStructuredText(event.type)
+  if (eventType === 'content_block_start' && event.content_block) {
+    return `${eventType}:${normalizeStructuredText(event.content_block.type)}`
+  }
+  if (eventType === 'content_block_delta' && event.delta) {
+    return `${eventType}:${normalizeStructuredText(event.delta.type)}`
+  }
+  return eventType
+}
+
+function extractAnthropicStreamDelta(
+  event: AnthropicStreamEventLike,
+  activeBlockTypes: Map<number, string>,
+): { delta_type: 'content' | 'reasoning'; text: string } | null {
+  const eventType = normalizeStructuredText(event.type)
+  const index = typeof event.index === 'number' ? event.index : null
+
+  if (eventType === 'content_block_start' && index != null && event.content_block) {
+    const block = event.content_block
+    const blockType = normalizeStructuredText(block.type)
+    activeBlockTypes.set(index, blockType)
+
+    if (blockType === 'text') {
+      const text = normalizeStructuredText(block.text)
+      return text ? { delta_type: 'content', text } : null
+    }
+
+    if (blockType === 'thinking') {
+      const text = normalizeReasoningText(normalizeStructuredText(block.thinking))
+      return text ? { delta_type: 'reasoning', text } : null
+    }
+
+    return null
+  }
+
+  if (eventType === 'content_block_stop' && index != null) {
+    activeBlockTypes.delete(index)
+    return null
+  }
+
+  if (eventType !== 'content_block_delta' || index == null || !event.delta) {
+    return null
+  }
+
+  const blockType = activeBlockTypes.get(index)
+  const delta = event.delta
+  const deltaType = normalizeStructuredText(delta.type)
+
+  if (blockType === 'text' && deltaType === 'text_delta') {
+    const text = normalizeStructuredText(delta.text)
+    return text ? { delta_type: 'content', text } : null
+  }
+
+  if (blockType === 'thinking' && deltaType === 'thinking_delta') {
+    const text = normalizeReasoningText(normalizeStructuredText(delta.thinking))
+    return text ? { delta_type: 'reasoning', text } : null
+  }
+
+  return null
+}
+
 function createStreamDiagnosticsAccumulator(): StreamDiagnosticsAccumulator {
   return {
     eventTypes: new Set<string>(),
@@ -424,8 +695,53 @@ function createStreamDiagnosticsAccumulator(): StreamDiagnosticsAccumulator {
   }
 }
 
+function buildCompletionDiagnostics(
+  configuredMode: ProviderRequestMode,
+  selectedMode: ResolvedRequestMode,
+  endpoint: string,
+  attempts: RequestAttemptDiagnostic[],
+  parsed: Pick<ChatCompletionResult, 'content' | 'reasoning_details'>,
+): ChatCompletionDiagnostics {
+  return {
+    configured_mode: configuredMode,
+    selected_mode: selectedMode,
+    endpoint,
+    fallback_used: attempts.length > 1,
+    attempts,
+    stream_event_types: [],
+    reasoning_event_count: parsed.reasoning_details ? 1 : 0,
+    content_event_count: parsed.content ? 1 : 0,
+    reasoning_text_chars: parsed.reasoning_details?.length || 0,
+    content_text_chars: parsed.content.length,
+    saw_reasoning: Boolean(parsed.reasoning_details),
+    reasoning_details_present: Boolean(parsed.reasoning_details),
+  }
+}
+
+function buildFailureDiagnostics(
+  configuredMode: ProviderRequestMode,
+  selectedMode: ResolvedRequestMode | null,
+  endpoint: string,
+  attempts: RequestAttemptDiagnostic[],
+): ChatCompletionDiagnostics {
+  return {
+    configured_mode: configuredMode,
+    selected_mode: selectedMode,
+    endpoint,
+    fallback_used: attempts.length > 1,
+    attempts,
+    stream_event_types: [],
+    reasoning_event_count: 0,
+    content_event_count: 0,
+    reasoning_text_chars: 0,
+    content_text_chars: 0,
+    saw_reasoning: false,
+    reasoning_details_present: false,
+  }
+}
+
 function buildDiagnostics(
-  requestConfig: RequestConfig,
+  requestConfig: RuntimeRequestConfig,
   context: StreamDiagnosticsContext,
   state: StreamDiagnosticsAccumulator,
   reasoningDetails: string | null,
@@ -518,6 +834,68 @@ async function doFetch(
   }
 }
 
+async function runAnthropicChatCompletion(
+  settings: ProviderSettings,
+  requestConfig: AnthropicRequestConfig,
+  options: ChatCompletionOptions,
+) {
+  const client = getAnthropicClient(settings, requestConfig)
+  const message = await client.messages.create(buildAnthropicMessageParams(options, false), {
+    timeout: options.timeoutMs,
+    signal: options.signal,
+  })
+  return parseAnthropicMessageResult(message)
+}
+
+async function* runAnthropicChatCompletionStream(
+  settings: ProviderSettings,
+  requestConfig: AnthropicRequestConfig,
+  options: ChatCompletionOptions,
+  context: StreamDiagnosticsContext,
+): AsyncGenerator<ChatCompletionStreamEvent> {
+  const client = getAnthropicClient(settings, requestConfig)
+  const stream = await client.messages.create(buildAnthropicMessageParams(options, true), {
+    timeout: options.timeoutMs,
+    signal: options.signal,
+  })
+
+  let contentAcc = ''
+  let reasoningAcc = ''
+  const activeBlockTypes = new Map<number, string>()
+  const diagnostics = createStreamDiagnosticsAccumulator()
+
+  for await (const rawEvent of stream) {
+    const event = rawEvent as unknown as AnthropicStreamEventLike
+    const eventType = describeAnthropicStreamEventType(event)
+    if (eventType) {
+      diagnostics.eventTypes.add(eventType)
+    }
+
+    const delta = extractAnthropicStreamDelta(event, activeBlockTypes)
+    if (!delta?.text) continue
+
+    if (delta.delta_type === 'content') {
+      contentAcc += delta.text
+      diagnostics.contentEventCount += 1
+      diagnostics.contentTextChars += delta.text.length
+      yield delta
+      continue
+    }
+
+    reasoningAcc += delta.text
+    diagnostics.reasoningEventCount += 1
+    diagnostics.reasoningTextChars += delta.text.length
+    yield delta
+  }
+
+  yield {
+    delta_type: 'final',
+    content: contentAcc,
+    reasoning_details: reasoningAcc || null,
+    diagnostics: buildDiagnostics(requestConfig, context, diagnostics, reasoningAcc || null, 'succeeded'),
+  }
+}
+
 function shouldFallbackToNextAttempt(error: unknown, hasNextAttempt: boolean) {
   if (!hasNextAttempt) return false
   if (!isRequestError(error)) return false
@@ -552,9 +930,48 @@ export async function chatCompletion(
   settings: ProviderSettings,
   { model, messages, timeoutMs = 120000, signal }: ChatCompletionOptions,
 ) {
+  const anthropicRequestConfig = createAnthropicRequestConfig(settings, model)
   const requestConfigs = createRequestConfigs(settings.baseUrl, settings.requestMode)
   let lastError: unknown = null
   const attempts: RequestAttemptDiagnostic[] = []
+
+  if (anthropicRequestConfig) {
+    try {
+      const parsed = await runAnthropicChatCompletion(settings, anthropicRequestConfig, {
+        model,
+        messages,
+        timeoutMs,
+        signal,
+      })
+      const successAttempt: RequestAttemptDiagnostic = {
+        mode: anthropicRequestConfig.mode,
+        endpoint: anthropicRequestConfig.endpoint,
+        status: 'succeeded',
+      }
+      const diagnosticAttempts = [...attempts, successAttempt]
+      return {
+        ...parsed,
+        diagnostics: buildCompletionDiagnostics(
+          settings.requestMode || 'auto',
+          anthropicRequestConfig.mode,
+          anthropicRequestConfig.endpoint,
+          diagnosticAttempts,
+          parsed,
+        ),
+      }
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error
+      }
+      lastError = error
+      attempts.push({
+        mode: anthropicRequestConfig.mode,
+        endpoint: anthropicRequestConfig.endpoint,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
   for (const [index, requestConfig] of requestConfigs.entries()) {
     try {
@@ -572,22 +989,16 @@ export async function chatCompletion(
         endpoint: requestConfig.endpoint,
         status: 'succeeded',
       }
+      const diagnosticAttempts = [...attempts, successAttempt]
       return {
         ...parsed,
-        diagnostics: {
-          configured_mode: settings.requestMode || 'auto',
-          selected_mode: requestConfig.mode,
-          endpoint: requestConfig.endpoint,
-          fallback_used: index > 0,
-          attempts: [...attempts, successAttempt],
-          stream_event_types: [],
-          reasoning_event_count: parsed.reasoning_details ? 1 : 0,
-          content_event_count: parsed.content ? 1 : 0,
-          reasoning_text_chars: parsed.reasoning_details?.length || 0,
-          content_text_chars: parsed.content.length,
-          saw_reasoning: Boolean(parsed.reasoning_details),
-          reasoning_details_present: Boolean(parsed.reasoning_details),
-        },
+        diagnostics: buildCompletionDiagnostics(
+          settings.requestMode || 'auto',
+          requestConfig.mode,
+          requestConfig.endpoint,
+          diagnosticAttempts,
+          parsed,
+        ),
       }
     } catch (error) {
       if (isAbortError(error)) {
@@ -895,9 +1306,39 @@ export async function* chatCompletionStream(
   settings: ProviderSettings,
   { model, messages, timeoutMs = 120000, signal }: ChatCompletionOptions,
 ): AsyncGenerator<ChatCompletionStreamEvent> {
+  const anthropicRequestConfig = createAnthropicRequestConfig(settings, model)
   const requestConfigs = createRequestConfigs(settings.baseUrl, settings.requestMode)
   let lastError: unknown = null
   const attempts: RequestAttemptDiagnostic[] = []
+
+  if (anthropicRequestConfig) {
+    try {
+      for await (const event of runAnthropicChatCompletionStream(
+        settings,
+        anthropicRequestConfig,
+        { model, messages, timeoutMs, signal },
+        {
+          configuredMode: settings.requestMode || 'auto',
+          previousAttempts: attempts,
+          fallbackUsed: attempts.length > 0,
+        },
+      )) {
+        yield event
+      }
+      return
+    } catch (error) {
+      if (isAbortError(error)) {
+        throw error
+      }
+      lastError = error
+      attempts.push({
+        mode: anthropicRequestConfig.mode,
+        endpoint: anthropicRequestConfig.endpoint,
+        status: 'failed',
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
 
   for (const [index, requestConfig] of requestConfigs.entries()) {
     try {
@@ -912,7 +1353,7 @@ export async function* chatCompletionStream(
       for await (const event of streamFromResponse(requestConfig, response, {
         configuredMode: settings.requestMode || 'auto',
         previousAttempts: attempts,
-        fallbackUsed: index > 0,
+        fallbackUsed: attempts.length > 0 || index > 0,
       })) {
         yield event
       }
@@ -935,20 +1376,12 @@ export async function* chatCompletionStream(
       yield {
         delta_type: 'error',
         message: error instanceof Error ? error.message : String(error),
-        diagnostics: {
-          configured_mode: settings.requestMode || 'auto',
-          selected_mode: requestConfig.mode,
-          endpoint: requestConfig.endpoint,
-          fallback_used: index > 0,
+        diagnostics: buildFailureDiagnostics(
+          settings.requestMode || 'auto',
+          requestConfig.mode,
+          requestConfig.endpoint,
           attempts,
-          stream_event_types: [],
-          reasoning_event_count: 0,
-          content_event_count: 0,
-          reasoning_text_chars: 0,
-          content_text_chars: 0,
-          saw_reasoning: false,
-          reasoning_details_present: false,
-        },
+        ),
       }
       return
     }
@@ -957,35 +1390,37 @@ export async function* chatCompletionStream(
   yield {
     delta_type: 'error',
     message: lastError instanceof Error ? lastError.message : String(lastError || 'Request failed'),
-    diagnostics: {
-      configured_mode: settings.requestMode || 'auto',
-      selected_mode: requestConfigs[requestConfigs.length - 1]?.mode || null,
-      endpoint: requestConfigs[requestConfigs.length - 1]?.endpoint || '',
-      fallback_used: requestConfigs.length > 1,
+    diagnostics: buildFailureDiagnostics(
+      settings.requestMode || 'auto',
+      requestConfigs[requestConfigs.length - 1]?.mode || anthropicRequestConfig?.mode || null,
+      requestConfigs[requestConfigs.length - 1]?.endpoint || anthropicRequestConfig?.endpoint || '',
       attempts,
-      stream_event_types: [],
-      reasoning_event_count: 0,
-      content_event_count: 0,
-      reasoning_text_chars: 0,
-      content_text_chars: 0,
-      saw_reasoning: false,
-      reasoning_details_present: false,
-    },
+    ),
   }
 }
 
 export const __private__ = {
+  buildAnthropicMessageParams,
+  buildAnthropicThinkingConfig,
   buildHeaders,
   buildPayload,
   buildChatResponseObject,
+  createAnthropicRequestConfig,
   createRequestConfigs,
+  describeAnthropicStreamEventType,
+  extractAnthropicStreamDelta,
   extractPayloadsFromBlock,
   extractReasoningDelta,
   extractResponsesEventDelta,
+  isAnthropicBaseUrl,
+  isAnthropicModel,
+  supportsAdaptiveThinking,
   mergeReasoningText,
   normalizeStructuredText,
   normalizeReasoningValue,
+  parseAnthropicMessageResult,
   parseResponsesResult,
+  resolveAnthropicBaseUrl,
   resolveEndpoint,
   shouldFallbackToNextAttempt,
 }

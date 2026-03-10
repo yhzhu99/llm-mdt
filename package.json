@@ -8,9 +8,11 @@
     "build": "vue-tsc -b && vite build",
     "typecheck": "vue-tsc -b",
     "lint": "eslint .",
+    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.78.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "dompurify": "^3.3.0",
@@ -38,6 +40,7 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.2",
     "vite": "^7.2.4",
+    "vitest": "^4.0.18",
     "vue-tsc": "^3.1.4"
   }
 }
