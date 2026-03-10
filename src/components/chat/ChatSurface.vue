@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { Crown, LoaderCircle, MessageSquareText, Pencil, Scale, Settings2, Sparkles, Square } from 'lucide-vue-next'
+import { LoaderCircle, MessageSquareText, Pencil, Settings2, Square } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import { cn } from '@/utils'
 import Button from '@/components/ui/button/Button.vue'
@@ -11,7 +11,6 @@ import StageNavigation from './StageNavigation.vue'
 import StageOneCard from './StageOneCard.vue'
 import StageThreeCard from './StageThreeCard.vue'
 import StageTwoCard from './StageTwoCard.vue'
-import TraceLog from './TraceLog.vue'
 
 interface ConversationMessageBase {
   id?: string
@@ -107,7 +106,6 @@ interface RuntimeConfigLike {
 type StageKey = 'stage1' | 'stage2' | 'stage3'
 type StageStatus = 'waiting' | 'running' | 'complete' | 'error'
 type RunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stopped'
-type AssistantStatus = StageStatus | 'stopped'
 
 const props = withDefaults(
   defineProps<{
@@ -192,16 +190,11 @@ const heroTitleClass = computed(() =>
       : 'max-w-none md:whitespace-nowrap',
 )
 
-const shortModelName = (model: string) => model.split('/')[1] || model
 const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
 const messageCouncilOrder = (message: AssistantMessage) =>
   message.runConfig?.councilModels?.length ? message.runConfig.councilModels : props.runtimeConfig?.council_models || []
-const messageChairmanModel = (message: AssistantMessage) =>
-  message.runConfig?.chairmanModel || props.runtimeConfig?.chairman_model || 'chairman'
 const stageEnabledForMessage = (message: AssistantMessage, stage: StageKey) =>
   stageRank[stage] <= stageRank[messageTargetStage(message)]
-const visibleStagesForMessage = (message: AssistantMessage) =>
-  (['stage1', 'stage2', 'stage3'] as StageKey[]).filter((stage) => stageEnabledForMessage(message, stage))
 
 const latestAssistantFingerprint = computed(() => {
   const messages = props.conversation?.messages || []
@@ -316,39 +309,6 @@ const handleEditKeydown = (event: KeyboardEvent) => {
 const isLatestUserMessage = (index: number) => latestUserEntry.value?.index === index
 const isLatestAssistantMessage = (index: number) => latestAssistantEntry.value?.index === index
 const stageSectionId = (messageId: string | undefined, stage: StageKey) => `${messageId || 'assistant'}-${stage}`
-const tracePayloadForMessage = (message: AssistantMessage) => {
-  const payload: Record<string, unknown> = {}
-
-  if (message.metadata) {
-    payload.ranking = message.metadata
-  }
-
-  if (message.runConfig) {
-    payload.run_config = {
-      target_stage: message.runConfig.targetStage,
-      council_models: message.runConfig.councilModels,
-      chairman_model: message.runConfig.chairmanModel,
-    }
-  }
-
-  if (message.stage3?.diagnostics || message.stage3 || message.streamMeta?.stage3?.status === 'error') {
-    payload.stage3 = {
-      model: message.stage3?.model || messageChairmanModel(message),
-      reasoning_available: Boolean(message.stage3?.reasoning_details || message.stream?.stage3?.thinking),
-      diagnostics: message.stage3?.diagnostics || null,
-      stream_status: message.streamMeta?.stage3?.status || 'idle',
-      stream_error: message.streamMeta?.stage3?.message || '',
-    }
-  }
-
-  return Object.keys(payload).length > 0 ? payload : null
-}
-
-const stageTitle = (stage: StageKey) => {
-  if (stage === 'stage1') return t('stage1Title')
-  if (stage === 'stage2') return t('stage2Title')
-  return t('stage3Title')
-}
 
 const stageStatusFromModelMeta = (
   meta: Record<string, { status: 'idle' | 'running' | 'complete' | 'error'; message?: string }> | undefined,
@@ -438,96 +398,6 @@ const stageAvailability = (message: AssistantMessage, index: number) => ({
   stage2: shouldRenderStageSection(message, index, 'stage2'),
   stage3: shouldRenderStageSection(message, index, 'stage3'),
 })
-
-const isAssistantStreaming = (message: AssistantMessage, index: number) => {
-  if (isAssistantActiveTurn(index)) return true
-  return Boolean(message.loading?.stage1 || message.loading?.stage2 || message.loading?.stage3)
-}
-
-const assistantCurrentStage = (message: AssistantMessage, index: number): StageKey => {
-  const statuses = stageStatuses(message, index)
-  const visibleStages = visibleStagesForMessage(message)
-
-  for (const stage of [...visibleStages].reverse()) {
-    if (statuses[stage] === 'running') return stage
-  }
-
-  for (const stage of [...visibleStages].reverse()) {
-    if (statuses[stage] !== 'waiting') return stage
-  }
-
-  return visibleStages[0] || 'stage1'
-}
-
-const assistantOverallStatus = (message: AssistantMessage, index: number): AssistantStatus => {
-  const statuses = stageStatuses(message, index)
-  const visibleStages = visibleStagesForMessage(message)
-  const targetStage = messageTargetStage(message)
-
-  if (props.runStatus === 'stopped' && isLatestAssistantMessage(index)) return 'stopped'
-  if (isAssistantStreaming(message, index)) return 'running'
-  if (statuses[targetStage] === 'complete') return 'complete'
-  if (visibleStages.some((stage) => statuses[stage] === 'error')) return 'error'
-  return assistantCurrentStage(message, index) === 'stage1' && statuses.stage1 === 'waiting' ? 'waiting' : statuses[assistantCurrentStage(message, index)]
-}
-
-const assistantStatusText = (message: AssistantMessage, index: number) => {
-  const status = assistantOverallStatus(message, index)
-  const currentStage = assistantCurrentStage(message, index)
-  const targetStage = messageTargetStage(message)
-
-  if (status === 'running') return `${t('streaming')} · ${stageTitle(currentStage)}`
-  if (status === 'complete') return `${t('stageStatusComplete')} · ${stageTitle(targetStage)}`
-  if (status === 'error') return `${t('stageStatusError')} · ${stageTitle(currentStage)}`
-  if (status === 'stopped') return `${t('stageStatusStopped')} · ${stageTitle(currentStage)}`
-  return stageTitle(currentStage)
-}
-
-const assistantStatusBadgeClass = (status: AssistantStatus) =>
-  cn(
-    'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium',
-    status === 'running' && 'border-primary/20 bg-primary/10 text-primary',
-    status === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700',
-    status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
-    status === 'stopped' && 'border-amber-500/20 bg-amber-500/10 text-amber-700',
-    status === 'waiting' && 'border-border/70 bg-background/70 text-muted-foreground',
-  )
-
-const stageSummaryClass = (status: StageStatus) =>
-  cn(
-    'inline-flex items-center gap-2 rounded-full border px-2.5 py-1 text-xs font-medium',
-    status === 'running' && 'border-primary/20 bg-primary/10 text-primary',
-    status === 'complete' && 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700',
-    status === 'error' && 'border-destructive/20 bg-destructive/10 text-destructive',
-    status === 'waiting' && 'border-border/70 bg-background/70 text-muted-foreground',
-  )
-
-const stageSummaryDotClass = (status: StageStatus) =>
-  cn(
-    'h-2.5 w-2.5 rounded-full bg-muted-foreground/35',
-    status === 'running' && 'bg-primary animate-pulse',
-    status === 'complete' && 'bg-emerald-500',
-    status === 'error' && 'bg-destructive',
-  )
-
-const currentStageIcon = (stage: StageKey) => {
-  if (stage === 'stage1') return Sparkles
-  if (stage === 'stage2') return Scale
-  return Crown
-}
-
-const runConfigPills = (message: AssistantMessage) => [
-  {
-    key: 'target-stage',
-    label: stageTitle(messageTargetStage(message)),
-    title: `${t('composerRunToStage')} · ${stageTitle(messageTargetStage(message))}`,
-  },
-  ...messageCouncilOrder(message).map((model) => ({
-    key: model,
-    label: shortModelName(model),
-    title: model,
-  })),
-]
 
 const isNearBottom = () => {
   const root = scrollRootRef.value
@@ -746,66 +616,16 @@ watch(
             </div>
 
             <div v-else class="min-w-0 space-y-4">
-              <div class="rounded-[1.3rem] border border-border/65 bg-background/65 px-4 py-3.5 shadow-[0_18px_48px_-40px_rgba(15,23,42,0.34)] backdrop-blur">
-                <div class="flex flex-wrap items-start justify-between gap-4">
-                  <div class="space-y-1.5">
-                    <div class="flex flex-wrap items-center gap-3">
-                      <div class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-                        <MessageSquareText :size="16" class="text-primary" />
-                        {{ t('assistantLabel') }}
-                      </div>
-                      <div :class="assistantStatusBadgeClass(assistantOverallStatus(message as AssistantMessage, index))">
-                        <span
-                          :class="
-                            cn(
-                              'h-2.5 w-2.5 rounded-full bg-current/40',
-                              assistantOverallStatus(message as AssistantMessage, index) === 'running' && 'animate-pulse bg-current',
-                              assistantOverallStatus(message as AssistantMessage, index) === 'complete' && 'bg-current',
-                              assistantOverallStatus(message as AssistantMessage, index) === 'error' && 'bg-current',
-                              assistantOverallStatus(message as AssistantMessage, index) === 'stopped' && 'bg-current',
-                            )
-                          "
-                        />
-                        {{ assistantStatusText(message as AssistantMessage, index) }}
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2 text-xs text-muted-foreground">
-                      <component :is="currentStageIcon(assistantCurrentStage(message as AssistantMessage, index))" :size="14" />
-                      <span>{{ t('assistantSubtitle') }}</span>
-                    </div>
-                    <div class="flex flex-wrap items-center gap-2">
-                      <span
-                        v-for="pill in runConfigPills(message as AssistantMessage)"
-                        :key="pill.key"
-                        :title="pill.title"
-                        class="inline-flex items-center rounded-full border border-border/70 bg-background/70 px-2.5 py-1 text-[11px] font-medium text-muted-foreground"
-                      >
-                        {{ pill.label }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div class="flex flex-wrap items-center justify-end gap-2">
-                    <Button
-                      v-if="isLatestAssistantMessage(index) && runStatus === 'running'"
-                      size="sm"
-                      variant="outline"
-                      class="h-8 rounded-full px-3"
-                      @click="emit('stop')"
-                    >
-                      <Square :size="14" />
-                      {{ t('conversationStop') }}
-                    </Button>
-                    <span
-                      v-for="stage in visibleStagesForMessage(message as AssistantMessage)"
-                      :key="stage"
-                      :class="stageSummaryClass(stageStatuses(message as AssistantMessage, index)[stage as StageKey])"
-                    >
-                      <span :class="stageSummaryDotClass(stageStatuses(message as AssistantMessage, index)[stage as StageKey])" />
-                      {{ stageTitle(stage as StageKey) }}
-                    </span>
-                  </div>
-                </div>
+              <div v-if="isLatestAssistantMessage(index) && runStatus === 'running'" class="flex justify-end">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  class="h-8 rounded-full px-3"
+                  @click="emit('stop')"
+                >
+                  <Square :size="14" />
+                  {{ t('conversationStop') }}
+                </Button>
               </div>
 
               <section
@@ -904,7 +724,6 @@ watch(
                 />
               </section>
 
-              <TraceLog :metadata="tracePayloadForMessage(message as AssistantMessage)" />
             </div>
           </div>
         </div>
