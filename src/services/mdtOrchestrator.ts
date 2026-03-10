@@ -34,42 +34,114 @@ function buildUserMessage(userQuery: string): ChatCompletionMessage {
   }
 }
 
-function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[]) {
-  const labels = stage1Results.map((_, index) => String.fromCharCode(65 + index))
+function getResponseLetter(index: number) {
+  return String.fromCharCode(65 + index)
+}
+
+function getResponseLabel(locale: AppLocale, value: number | string) {
+  const letter = typeof value === 'number' ? getResponseLetter(value) : String(value || '').trim().toUpperCase()
+  return locale === 'zh-CN' ? `回答${letter}` : `Response ${letter}`
+}
+
+function getFinalRankingHeader(locale: AppLocale) {
+  return locale === 'zh-CN' ? '最终排名' : 'FINAL RANKING'
+}
+
+function normalizeParsedRankingLabel(label: string, locale: AppLocale) {
+  const letterMatch = String(label || '').match(/[A-Z]/i)
+  if (!letterMatch) return null
+  return getResponseLabel(locale, letterMatch[0])
+}
+
+function getRankingHeaderPattern(locale: AppLocale) {
+  return locale === 'zh-CN' ? /最终排名\s*[：:]/ : /FINAL RANKING\s*:/i
+}
+
+function getNumberedRankingPattern(locale: AppLocale) {
+  return locale === 'zh-CN'
+    ? /\d+\s*[.．]\s*(回答\s*[A-Z])/gi
+    : /\d+\s*[.]\s*(Response\s+[A-Z])/gi
+}
+
+function getRankingLabelPattern(locale: AppLocale) {
+  return locale === 'zh-CN' ? /回答\s*[A-Z]/gi : /Response\s+[A-Z]/gi
+}
+
+function extractParsedRankingLabels(source: string, locale: AppLocale, numberedOnly = false) {
+  const pattern = numberedOnly ? getNumberedRankingPattern(locale) : getRankingLabelPattern(locale)
+  return [...String(source || '').matchAll(pattern)]
+    .map((match) => normalizeParsedRankingLabel(match[1] || match[0], locale))
+    .filter((label): label is string => Boolean(label))
+}
+
+function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[], locale: AppLocale) {
   const responsesText = stage1Results
-    .map((result, index) => `Response ${labels[index]}:\n${result.response}`)
+    .map((result, index) => `${getResponseLabel(locale, index)}:\n${result.response}`)
     .join('\n\n')
 
-  return `You are evaluating different responses to the following question:
+  if (locale === 'zh-CN') {
+    return `你是 MDT 委员会中的评审成员，需要评估同一用户问题的多个匿名回答。
 
-Question: ${userQuery}
+要求：
+1. 逐一评价每个回答的主要优点与不足。
+2. 只能使用题面提供的匿名标签，不要猜测或透露模型名称。
+3. 在分析结束后，再输出最终排名。
 
-Here are the responses from different models (anonymized):
+输出格式要求：
+1. 在回答结尾单独输出一节，标题必须是“${getFinalRankingHeader(locale)}：”
+2. 排名区块内按从优到劣列出回答。
+3. 每一行必须写成“1. 回答A”这种格式，只能写编号和匿名标签。
+4. 排名区块后不要再补充解释。
 
+用户问题：
+${userQuery}
+
+匿名回答：
 ${responsesText}
 
-Your task:
-1. First, evaluate each response individually. For each response, explain what it does well and what it does poorly.
-2. Then, at the very end of your response, provide a final ranking.
+示例格式：
+回答A 的优点是……不足是……
+回答B 的优点是……不足是……
+回答C 的优点是……不足是……
 
-IMPORTANT: Your final ranking MUST be formatted EXACTLY as follows:
-- Start with the line "FINAL RANKING:" (all caps, with colon)
-- Then list the responses from best to worst as a numbered list
-- Each line should be: number, period, space, then ONLY the response label (e.g., "1. Response A")
-- Do not add any other text or explanations in the ranking section
+${getFinalRankingHeader(locale)}：
+1. 回答C
+2. 回答A
+3. 回答B
 
-Example of the correct format for your ENTIRE response:
+任务：请先完成逐项评估，再给出最终排名。`
+  }
 
-Response A provides good detail on X but misses Y...
-Response B is accurate but lacks depth on Z...
-Response C offers the most comprehensive answer...
+  return `You are a reviewer on an MDT council, evaluating multiple anonymized responses to the same user question.
 
-FINAL RANKING:
+Instructions:
+1. Evaluate each response individually and explain its main strengths and weaknesses.
+2. Use only the anonymized labels exactly as provided, and do not infer or reveal model names.
+3. After the analysis, provide a final ranking.
+
+Output format requirements:
+1. At the end of your answer, include a section titled "${getFinalRankingHeader(locale)}:"
+2. In that ranking block, list the responses from best to worst.
+3. Each line must follow the exact format "1. Response A" with only the number and anonymized label.
+4. Do not add any explanation after the ranking block.
+
+User question:
+${userQuery}
+
+Anonymized responses:
+${responsesText}
+
+Example format:
+Response A does well on... but misses...
+Response B is strong on... but weak on...
+Response C is the most complete because...
+
+${getFinalRankingHeader(locale)}:
 1. Response C
 2. Response A
 3. Response B
 
-Now provide your evaluation and ranking:`
+Task: first provide the per-response evaluation, then provide the final ranking.`
 }
 
 function buildChairmanPrompt(userQuery: string, stage1Results: Stage1Result[], stage2Results: Stage2Result[]) {
@@ -95,47 +167,68 @@ Your task as Chairman is to synthesize all of this information into a single, co
 Provide a clear, well-reasoned final answer that represents the council's collective wisdom:`
 }
 
-function buildTitlePrompt(userQuery: string) {
-  return `Generate a very short title (3-5 words maximum) that summarizes the following question.
-The title should be concise and descriptive. Do not use quotes or punctuation in the title.
 
-Question: ${userQuery}
+function buildTitlePrompt(userQuery: string, locale: AppLocale) {
+  if (locale === 'zh-CN') {
+    return `你负责为对话生成标题。
 
-Title:`
-}
+要求：
+1. 输出一个简洁、准确的中文标题。
+2. 标题尽量控制在 12 个字以内。
+3. 不要使用引号或句末标点。
+4. 只输出标题本身，不要添加解释。
 
-export function parseRankingFromText(rankingText: string) {
-  const source = String(rankingText || '')
+问题：
+${userQuery}
 
-  if (source.includes('FINAL RANKING:')) {
-    const [, rankingSection = ''] = source.split('FINAL RANKING:')
-    const numberedMatches = [...rankingSection.matchAll(/\d+\.\s*(Response [A-Z])/g)]
-    if (numberedMatches.length > 0) {
-      return numberedMatches
-        .map((match) => match[1])
-        .filter((label): label is string => Boolean(label))
-    }
-
-    return [...rankingSection.matchAll(/Response [A-Z]/g)]
-      .map((match) => match[0])
-      .filter((label): label is string => Boolean(label))
+任务：请输出标题。`
   }
 
-  return [...source.matchAll(/Response [A-Z]/g)]
-    .map((match) => match[0])
-    .filter((label): label is string => Boolean(label))
+  return `You generate titles for conversations.
+
+Instructions:
+1. Return a concise, descriptive English title.
+2. Use 3-5 words maximum.
+3. Do not use quotes or ending punctuation.
+4. Return only the title itself with no explanation.
+
+Question:
+${userQuery}
+
+Task: provide the title.`
+}
+
+export function parseRankingFromText(rankingText: string, locale: AppLocale = 'en') {
+  const source = String(rankingText || '')
+  const headerMatch = source.match(getRankingHeaderPattern(locale))
+  const rankingSection =
+    headerMatch && typeof headerMatch.index === 'number' ? source.slice(headerMatch.index + headerMatch[0].length) : source
+
+  const numberedMatches = extractParsedRankingLabels(rankingSection, locale, true)
+  if (numberedMatches.length > 0) {
+    return numberedMatches
+  }
+
+  const sectionMatches = extractParsedRankingLabels(rankingSection, locale)
+  if (sectionMatches.length > 0) {
+    return sectionMatches
+  }
+
+  return extractParsedRankingLabels(source, locale)
 }
 
 export function calculateRankingDetails(
   stage2Results: Array<Pick<Stage2Result, 'model' | 'ranking' | 'parsed_ranking'>>,
   labelToModel: Record<string, string>,
+  locale: AppLocale,
 ): RankingMetadata {
   const positionsByModel: Record<string, number[]> = {}
   const stage2ParsedRankings: ParsedStage2Ranking[] = []
 
   for (const ranking of stage2Results || []) {
     const voterModel = ranking.model || ''
-    const parsedRanking = ranking.parsed_ranking?.length > 0 ? ranking.parsed_ranking : parseRankingFromText(ranking.ranking || '')
+    const parsedRanking =
+      ranking.parsed_ranking?.length > 0 ? ranking.parsed_ranking : parseRankingFromText(ranking.ranking || '', locale)
 
     stage2ParsedRankings.push({
       voter_model: voterModel,
@@ -286,7 +379,7 @@ async function generateConversationTitle(
   try {
     const response = await client.chatCompletion(settings, {
       model: titleModel,
-      messages: [{ role: 'user', content: buildTitlePrompt(userQuery) }],
+      messages: [{ role: 'user', content: buildTitlePrompt(userQuery, locale) }],
       timeoutMs: 30000,
       signal,
     })
@@ -380,13 +473,13 @@ export async function runMdtConversationStream({
 
     if (stage1Results.length > 0) {
       const labelToModel = Object.fromEntries(
-        stage1Results.map((result, index) => [`Response ${String.fromCharCode(65 + index)}`, result.model]),
+        stage1Results.map((result, index) => [getResponseLabel(locale, index), result.model]),
       ) as Record<string, string>
 
       stage2Results = (await collectStageResponses({
         stagePrefix: 'stage2',
         models: settings.councilModels,
-        messages: [{ role: 'user', content: buildRankingPrompt(content, stage1Results) }],
+        messages: [{ role: 'user', content: buildRankingPrompt(content, stage1Results, locale) }],
         settings,
         client,
         emit,
@@ -396,10 +489,10 @@ export async function runMdtConversationStream({
       })) as Stage2Result[]
       stage2Results = stage2Results.map((result) => ({
         ...result,
-        parsed_ranking: parseRankingFromText(result.ranking),
+        parsed_ranking: parseRankingFromText(result.ranking, locale),
       }))
 
-      metadata = calculateRankingDetails(stage2Results, labelToModel)
+      metadata = calculateRankingDetails(stage2Results, labelToModel, locale)
       emit({ type: 'stage2_complete', data: stage2Results, metadata })
 
       emit({ type: 'stage3_start' })
