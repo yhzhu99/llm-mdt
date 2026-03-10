@@ -1795,7 +1795,7 @@ export function useMdtApp() {
 
     const nextConversation = updateConversationById(conversationId, (currentConversationValue) => {
       const baselineConversation = currentConversationValue || cloneValue(conversation)
-      const nextMessages = [...baselineConversation.messages]
+      const nextMessages = baselineConversation.messages.slice(0, latestUserMessageIndex + 1)
 
       nextMessages[latestUserMessageIndex] = {
         ...nextMessages[latestUserMessageIndex],
@@ -1803,11 +1803,7 @@ export function useMdtApp() {
         content: trimmedContent,
       }
 
-      if (latestAssistantMessageIndex >= 0 && latestAssistantMessageIndex > latestUserMessageIndex) {
-        nextMessages[latestAssistantMessageIndex] = assistantMessage
-      } else {
-        nextMessages.splice(latestUserMessageIndex + 1, 0, assistantMessage)
-      }
+      nextMessages.push(assistantMessage)
 
       return {
         ...baselineConversation,
