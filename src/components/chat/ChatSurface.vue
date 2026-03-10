@@ -11,6 +11,7 @@ import StageNavigation from './StageNavigation.vue'
 import StageOneCard from './StageOneCard.vue'
 import StageThreeCard from './StageThreeCard.vue'
 import StageTwoCard from './StageTwoCard.vue'
+import { orderModelsByReference } from '@/utils/conversations'
 
 interface ConversationMessageBase {
   id?: string
@@ -191,8 +192,14 @@ const heroTitleClass = computed(() =>
 )
 
 const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
-const messageCouncilOrder = (message: AssistantMessage) =>
-  message.runConfig?.councilModels?.length ? message.runConfig.councilModels : props.runtimeConfig?.council_models || []
+const messageCouncilOrder = (message: AssistantMessage) => {
+  const configuredOrder = props.runtimeConfig?.council_models || []
+  const messageModels = message.runConfig?.councilModels?.length
+    ? message.runConfig.councilModels
+    : configuredOrder
+
+  return orderModelsByReference(messageModels, configuredOrder)
+}
 const stageEnabledForMessage = (message: AssistantMessage, stage: StageKey) =>
   stageRank[stage] <= stageRank[messageTargetStage(message)]
 

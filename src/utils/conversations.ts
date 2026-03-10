@@ -38,6 +38,20 @@ const getRelativeLabel = (iso: string, locale: AppLocale) => {
 
 const uniqueModels = (models: string[]) => [...new Set((models || []).map((model) => String(model || '').trim()).filter(Boolean))]
 
+export function orderModelsByReference(models: string[] | null | undefined, referenceModels: string[] | null | undefined) {
+  const source = uniqueModels(models || [])
+  const reference = uniqueModels(referenceModels || [])
+
+  if (source.length === 0) return []
+  if (reference.length === 0) return source
+
+  const sourceSet = new Set(source)
+  const ordered = reference.filter((model) => sourceSet.has(model))
+  const orderedSet = new Set(ordered)
+
+  return [...ordered, ...source.filter((model) => !orderedSet.has(model))]
+}
+
 const stageRank: Record<MdtTargetStage, number> = {
   stage1: 1,
   stage2: 2,
@@ -55,7 +69,7 @@ export function reconcileSelectedCouncilModels(selectedModels: string[] | null |
 
   const availableSet = new Set(available)
   const selected = uniqueModels(selectedModels).filter((model) => availableSet.has(model))
-  return selected.length > 0 ? selected : available
+  return selected.length > 0 ? orderModelsByReference(selected, available) : available
 }
 
 export function reconcileChatRunPreferences(
@@ -72,15 +86,16 @@ export function createRunConfig(
   settings: Pick<ProviderSettings, 'councilModels' | 'chairmanModel'> | null | undefined,
   input?: Partial<ChatRunPreferences> | Partial<MdtRunConfig> | null,
 ): MdtRunConfig {
+  const availableModels = uniqueModels(settings?.councilModels || [])
+
   if (input && 'councilModels' in input) {
     return {
       targetStage: normalizeTargetStage(input.targetStage),
-      councilModels: uniqueModels(input.councilModels || []),
+      councilModels: orderModelsByReference(input.councilModels || [], availableModels),
       chairmanModel: String(input.chairmanModel || settings?.chairmanModel || '').trim(),
     }
   }
 
-  const availableModels = uniqueModels(settings?.councilModels || [])
   const reconciled = reconcileChatRunPreferences(
     {
       targetStage: input?.targetStage,

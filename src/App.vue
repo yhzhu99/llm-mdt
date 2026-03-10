@@ -90,7 +90,6 @@ const topBarTitle = computed(() => {
         :status="providerStatus"
         :status-text="providerStatusText"
         @change-locale="setLocale"
-        @new-conversation="newConversation"
         @open-settings="openSettings"
       />
 

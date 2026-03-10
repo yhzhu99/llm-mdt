@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Languages, Plus, Settings2 } from 'lucide-vue-next'
+import { Languages, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import type { AppLocale } from '@/types'
 import Button from '@/components/ui/button/Button.vue'
@@ -19,7 +19,6 @@ withDefaults(
 )
 
 const emit = defineEmits<{
-  (event: 'new-conversation'): void
   (event: 'open-settings'): void
   (event: 'change-locale', value: AppLocale): void
 }>()
@@ -96,10 +95,6 @@ const { locale, t } = useI18n()
         <Button variant="ghost" size="sm" class="h-9 rounded-xl px-3" @click="$emit('open-settings')">
           <Settings2 :size="16" />
           <span class="hidden sm:inline">{{ t('topBarSettings') }}</span>
-        </Button>
-        <Button size="sm" class="h-9 rounded-xl px-3.5" @click="$emit('new-conversation')">
-          <Plus :size="16" />
-          <span class="hidden sm:inline">{{ t('topBarNewChat') }}</span>
         </Button>
       </div>
     </div>
