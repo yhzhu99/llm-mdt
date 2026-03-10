@@ -154,7 +154,7 @@ const emit = defineEmits<{
   (event: 'stop'): void
 }>()
 
-const { t } = useI18n()
+const { locale, t } = useI18n()
 const scrollRootRef = ref<HTMLElement | null>(null)
 const editTextareaRef = ref<HTMLTextAreaElement | null>(null)
 const isEditingLatestPrompt = ref(false)
@@ -173,6 +173,24 @@ const stageRank: Record<StageKey, number> = {
 
 const composerAvailableModels = computed(() => props.runtimeConfig?.council_models || [])
 const hasConversationMessages = computed(() => Boolean(props.conversation?.messages?.length))
+const heroTitleLines = computed(() => {
+  if (!props.providerConfigured) {
+    return [t('configureBrowserProvider')]
+  }
+
+  if (locale.value === 'en') {
+    return [t('welcomeTitleLine1'), t('welcomeTitleLine2')]
+  }
+
+  return [t('welcomeTitle')]
+})
+const heroTitleClass = computed(() =>
+  !props.providerConfigured
+    ? 'max-w-[12ch]'
+    : locale.value === 'en'
+      ? 'max-w-[22ch]'
+      : 'max-w-none md:whitespace-nowrap',
+)
 
 const shortModelName = (model: string) => model.split('/')[1] || model
 const messageTargetStage = (message: AssistantMessage): StageKey => message.runConfig?.targetStage || 'stage3'
@@ -574,11 +592,20 @@ watch(
       data-chat-scroll-root
       class="scrollbar-hide flex-1 overflow-y-auto px-4 py-4 sm:px-6 sm:py-5"
     >
-      <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full w-full max-w-[80rem] items-center">
+      <div v-if="!hasConversationMessages" class="mx-auto flex min-h-full w-full max-w-[72rem] items-center">
         <div class="w-full space-y-5 py-6 sm:py-10">
           <div class="space-y-2">
-            <h2 class="max-w-[22ch] text-[clamp(2.25rem,4.4vw,4.5rem)] font-semibold leading-[0.95] tracking-[-0.05em] text-foreground [text-wrap:balance]">
-              {{ providerConfigured ? t('welcomeTitle') : t('configureBrowserProvider') }}
+            <h2
+              :class="heroTitleClass"
+              class="text-[clamp(2.25rem,4.4vw,4.5rem)] font-semibold leading-[0.95] tracking-[-0.05em] text-foreground"
+            >
+              <span
+                v-for="(line, index) in heroTitleLines"
+                :key="`${line}-${index}`"
+                class="block"
+              >
+                {{ line }}
+              </span>
             </h2>
           </div>
 
