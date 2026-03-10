@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount } from 'vue'
 import { useI18n } from '@/i18n'
+import { COPY_FEEDBACK_DURATION_MS, writeTextToClipboard } from '@/utils/clipboard'
 import { parseMarkdown, sanitizeMarkdownHtml } from '@/utils/markdown'
 
 const props = defineProps<{
@@ -15,25 +16,20 @@ const renderedHtml = computed(() =>
     parseMarkdown(props.source || '', {
       code: t('markdownCode'),
       copy: t('copy'),
+      copied: t('copied'),
+      copyFailed: t('copyFailed'),
     }),
   ),
 )
 
-const writeToClipboard = async (text: string) => {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
-  }
+const resetTimers = new Map<HTMLElement, number>()
 
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'absolute'
-  textarea.style.left = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
+const clearResetTimer = (trigger: HTMLElement) => {
+  const activeTimer = resetTimers.get(trigger)
+  if (activeTimer !== undefined) {
+    window.clearTimeout(activeTimer)
+    resetTimers.delete(trigger)
+  }
 }
 
 const handleClick = async (event: MouseEvent) => {
@@ -42,19 +38,43 @@ const handleClick = async (event: MouseEvent) => {
   const encoded = trigger?.dataset.copyCode
   if (!trigger || !encoded) return
 
-  const originalText = trigger.textContent || t('copy')
+  const badge = trigger.parentElement?.querySelector<HTMLElement>('[data-copy-feedback]')
+  const setFeedback = (state: 'success' | 'error', message: string) => {
+    trigger.dataset.copyState = state
+    if (badge) {
+      badge.dataset.state = state
+      badge.dataset.visible = 'true'
+      badge.textContent = message
+    }
+
+    clearResetTimer(trigger)
+    const timer = window.setTimeout(() => {
+      trigger.dataset.copyState = 'idle'
+      if (badge) {
+        badge.dataset.state = 'idle'
+        badge.dataset.visible = 'false'
+        badge.textContent = ''
+      }
+      resetTimers.delete(trigger)
+    }, COPY_FEEDBACK_DURATION_MS)
+    resetTimers.set(trigger, timer)
+  }
+
   try {
-    await writeToClipboard(decodeURIComponent(encoded))
-    trigger.textContent = t('copied')
+    await writeTextToClipboard(decodeURIComponent(encoded))
+    setFeedback('success', trigger.dataset.copySuccess || t('copied'))
   } catch (error) {
     console.error('Failed to copy code block', error)
-    trigger.textContent = t('copyFailed')
-  } finally {
-    window.setTimeout(() => {
-      trigger.textContent = originalText
-    }, 1200)
+    setFeedback('error', trigger.dataset.copyError || t('copyFailed'))
   }
 }
+
+onBeforeUnmount(() => {
+  resetTimers.forEach((timer) => {
+    window.clearTimeout(timer)
+  })
+  resetTimers.clear()
+})
 </script>
 
 <template>

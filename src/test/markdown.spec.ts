@@ -45,4 +45,19 @@ describe('parseMarkdown latex delimiters', () => {
     expect(html).toContain('(a^2 + b^2 = c^2')
     expect(html).not.toContain('class="katex"')
   })
+
+  it('renders code block copy controls with shared feedback markup', () => {
+    const html = parseMarkdown('```ts\nconst total = 1\n```', {
+      code: '代码',
+      copy: '复制',
+      copied: '已复制',
+      copyFailed: '复制失败',
+    })
+
+    expect(html).toContain('class="copy-feedback-anchor shrink-0"')
+    expect(html).toContain('class="copy-trigger md-copy-trigger"')
+    expect(html).toContain('data-copy-success="已复制"')
+    expect(html).toContain('data-copy-error="复制失败"')
+    expect(html).toContain('data-copy-feedback')
+  })
 })

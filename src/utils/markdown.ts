@@ -110,44 +110,47 @@ const blockBracketMathExtension: TokenizerAndRendererExtension = {
   },
 }
 
-const renderer = new Renderer()
-renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-  const normalizedLang = normalizeLanguage(lang)
-  const encodedCode = encodeURIComponent(text)
+const createRenderer = ({
+  codeLabel,
+  copyLabel,
+  copiedLabel,
+  copyFailedLabel,
+}: {
+  codeLabel: string
+  copyLabel: string
+  copiedLabel: string
+  copyFailedLabel: string
+}) => {
+  const renderer = new Renderer()
+  renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
+    const normalizedLang = normalizeLanguage(lang)
+    const encodedCode = encodeURIComponent(text)
 
-  return `
-    <div class="md-codeblock not-prose overflow-hidden rounded-xl border border-border/80 bg-muted/40">
-      <div class="flex items-center justify-between gap-3 border-b border-border/80 bg-muted/70 px-3 py-2">
-        <span class="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">${escapeHtml(normalizedLang || 'code')}</span>
-        <button type="button" class="md-copy-trigger inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground" data-copy-code="${encodedCode}">
-          Copy
-        </button>
+    return `
+      <div class="md-codeblock not-prose overflow-hidden rounded-xl border border-border/80 bg-muted/40">
+        <div class="flex items-center justify-between gap-3 border-b border-border/80 bg-muted/70 px-3 py-2">
+          <span class="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">${escapeHtml(normalizedLang || codeLabel)}</span>
+          <span class="copy-feedback-anchor shrink-0">
+            <button
+              type="button"
+              class="copy-trigger md-copy-trigger"
+              data-copy-code="${encodedCode}"
+              data-copy-success="${copiedLabel}"
+              data-copy-error="${copyFailedLabel}"
+              data-copy-state="idle"
+            >
+              ${copyLabel}
+            </button>
+            <span class="copy-feedback-badge" data-copy-feedback data-visible="false" data-state="idle" role="status" aria-live="polite"></span>
+          </span>
+        </div>
+        <pre class="overflow-x-auto bg-transparent p-4 text-sm leading-6 text-foreground"><code>${escapeHtml(text)}</code></pre>
       </div>
-      <pre class="overflow-x-auto bg-transparent p-4 text-sm leading-6 text-foreground"><code>${escapeHtml(text)}</code></pre>
-    </div>
-  `
+    `
+  }
+
+  return renderer
 }
-
-const markdownParser = new Marked({
-  gfm: true,
-  breaks: true,
-  renderer,
-})
-
-markdownParser.use({
-  extensions: [
-    blockBracketMathExtension,
-    inlineBracketMathExtension,
-    inlineParenMathExtension,
-  ],
-})
-
-markdownParser.use(
-  markedKatex({
-    throwOnError: false,
-    nonStandard: true,
-  }),
-)
 
 const rewriteExternalLinks = (html: string) =>
   html.replace(
@@ -161,33 +164,57 @@ export const parseMarkdown = (
   labels: {
     code?: string
     copy?: string
+    copied?: string
+    copyFailed?: string
   } = {},
 ) => {
   if (!content) return ''
   const codeLabel = escapeHtml(labels.code || 'code')
   const copyLabel = escapeHtml(labels.copy || 'Copy')
-  renderer.code = ({ text, lang }: { text: string; lang?: string }) => {
-    const normalizedLang = normalizeLanguage(lang)
-    const encodedCode = encodeURIComponent(text)
+  const copiedLabel = escapeHtml(labels.copied || 'Copied')
+  const copyFailedLabel = escapeHtml(labels.copyFailed || 'Copy failed')
+  const markdownParser = new Marked({
+    gfm: true,
+    breaks: true,
+    renderer: createRenderer({
+      codeLabel,
+      copyLabel,
+      copiedLabel,
+      copyFailedLabel,
+    }),
+  })
 
-    return `
-      <div class="md-codeblock not-prose overflow-hidden rounded-xl border border-border/80 bg-muted/40">
-        <div class="flex items-center justify-between gap-3 border-b border-border/80 bg-muted/70 px-3 py-2">
-          <span class="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">${escapeHtml(normalizedLang || codeLabel)}</span>
-          <button type="button" class="md-copy-trigger inline-flex items-center rounded-md border border-border bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-accent hover:text-accent-foreground" data-copy-code="${encodedCode}">
-            ${copyLabel}
-          </button>
-        </div>
-        <pre class="overflow-x-auto bg-transparent p-4 text-sm leading-6 text-foreground"><code>${escapeHtml(text)}</code></pre>
-      </div>
-    `
-  }
+  markdownParser.use({
+    extensions: [
+      blockBracketMathExtension,
+      inlineBracketMathExtension,
+      inlineParenMathExtension,
+    ],
+  })
+
+  markdownParser.use(
+    markedKatex({
+      throwOnError: false,
+      nonStandard: true,
+    }),
+  )
+
   return markdownParser.parse(content) as string
 }
 
 export const sanitizeMarkdownHtml = (html: string) => {
   if (!html) return ''
   return DOMPurify.sanitize(rewriteExternalLinks(html), {
-    ADD_ATTR: ['target', 'rel', 'style', 'data-copy-code'],
+    ADD_ATTR: [
+      'target',
+      'rel',
+      'style',
+      'data-copy-code',
+      'data-copy-success',
+      'data-copy-error',
+      'data-copy-state',
+      'data-copy-feedback',
+      'data-visible',
+    ],
   })
 }

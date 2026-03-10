@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { Check, Copy } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
+import { COPY_FEEDBACK_DURATION_MS, writeTextToClipboard } from '@/utils/clipboard'
 import { cn } from '@/utils'
 
 const props = withDefaults(
@@ -24,68 +25,72 @@ const props = withDefaults(
 
 const { t } = useI18n()
 const status = ref<'idle' | 'success' | 'error'>('idle')
+const hideTimer = ref<number | null>(null)
 const labelText = computed(() => props.label || t('copy'))
 const successText = computed(() => props.successLabel || t('copied'))
+const errorText = computed(() => t('copyFailed'))
+const feedbackText = computed(() =>
+  status.value === 'error' ? errorText.value : successText.value,
+)
 
-const writeToClipboard = async (text: string) => {
-  if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text)
-    return
+const clearHideTimer = () => {
+  if (hideTimer.value !== null) {
+    window.clearTimeout(hideTimer.value)
+    hideTimer.value = null
   }
-
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'absolute'
-  textarea.style.left = '-9999px'
-  document.body.appendChild(textarea)
-  textarea.select()
-  document.execCommand('copy')
-  document.body.removeChild(textarea)
 }
 
+onBeforeUnmount(() => {
+  clearHideTimer()
+})
+
 const handleCopy = async () => {
+  clearHideTimer()
   try {
     const text = await props.getText()
-    await writeToClipboard(text)
+    await writeTextToClipboard(text)
     status.value = 'success'
   } catch (error) {
     console.error('Failed to copy text', error)
     status.value = 'error'
   } finally {
-    window.setTimeout(() => {
+    hideTimer.value = window.setTimeout(() => {
       status.value = 'idle'
-    }, 1200)
+      hideTimer.value = null
+    }, COPY_FEEDBACK_DURATION_MS)
   }
 }
 </script>
 
 <template>
-  <span class="relative inline-flex items-center" :class="props.class">
+  <span class="copy-feedback-anchor" :class="props.class">
     <button
       type="button"
       :title="title || labelText"
       :aria-label="title || labelText"
       :class="
         cn(
-          'inline-flex items-center gap-2 rounded-lg border border-border/70 bg-background/80 px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:bg-accent hover:text-accent-foreground',
-          iconOnly && 'h-8 w-8 justify-center px-0 py-0',
+          'copy-trigger',
+          iconOnly && 'copy-trigger--icon',
         )
       "
+      :data-copy-state="status"
       @click="handleCopy"
     >
       <Check v-if="status === 'success'" :size="14" />
       <Copy v-else :size="14" />
-      <span v-if="!iconOnly">{{ status === 'success' ? successText : labelText }}</span>
+      <span v-if="!iconOnly">{{ labelText }}</span>
     </button>
 
     <span
-      v-if="iconOnly && status === 'success'"
-      class="pointer-events-none absolute left-1/2 top-full z-10 mt-2 -translate-x-1/2 rounded-md bg-foreground px-2 py-1 text-[11px] font-medium text-background shadow-lg"
+      v-if="status !== 'idle'"
+      class="copy-feedback-badge"
+      data-visible="true"
+      :data-state="status"
       role="status"
       aria-live="polite"
     >
-      {{ successText }}
+      {{ feedbackText }}
     </span>
   </span>
 </template>
