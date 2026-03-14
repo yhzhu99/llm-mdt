@@ -99,6 +99,38 @@
     display: none;
   }
 
+  .scrollbar-reveal {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+
+  .scrollbar-reveal:hover,
+  .scrollbar-reveal:focus-within {
+    scrollbar-color: hsl(var(--muted-foreground) / 0.35) transparent;
+  }
+
+  .scrollbar-reveal::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .scrollbar-reveal::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-reveal::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background: transparent;
+    background-clip: content-box;
+  }
+
+  .scrollbar-reveal:hover::-webkit-scrollbar-thumb,
+  .scrollbar-reveal:focus-within::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.38);
+    background-clip: content-box;
+  }
+
   .streaming-prose > :last-child::after {
     content: '';
     display: inline-block;
