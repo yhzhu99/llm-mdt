@@ -202,7 +202,7 @@ const handleProjectRename = (projectId: string, title: string) => {
   <aside
     :class="
       cn(
-        'flex h-screen shrink-0 flex-col border-r border-border/80 bg-card/75 backdrop-blur transition-all duration-300',
+        'flex h-full min-h-0 shrink-0 flex-col border-r border-border/80 bg-card/75 backdrop-blur transition-all duration-300',
         isCollapsed ? 'w-[84px]' : 'w-[320px]',
       )
     "

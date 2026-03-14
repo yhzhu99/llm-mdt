@@ -72,24 +72,34 @@
   }
 
   html {
-    @apply antialiased;
+    @apply h-full overflow-hidden antialiased;
     color-scheme: light;
+    overscroll-behavior: none;
   }
 
   body {
-    @apply min-h-screen bg-background text-foreground;
+    @apply h-full overflow-hidden bg-background text-foreground;
+    min-height: 100dvh;
     font-feature-settings: 'rlig' 1, 'calt' 1;
     font-family: 'Manrope', 'Avenir Next', 'Segoe UI', sans-serif;
     background-image: linear-gradient(180deg, rgba(248, 250, 252, 0.96), rgba(241, 245, 249, 0.88));
     background-attachment: fixed;
+    overscroll-behavior: none;
   }
 
   #app {
-    @apply min-h-screen;
+    @apply h-full overflow-hidden;
+    min-height: 100dvh;
   }
 }
 
 @layer utilities {
+  .app-viewport {
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
+  }
+
   .scrollbar-hide {
     -ms-overflow-style: none;
     scrollbar-width: none;

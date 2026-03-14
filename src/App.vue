@@ -62,7 +62,7 @@ const topBarTitle = computed(() => {
 </script>
 
 <template>
-  <div class="flex h-screen overflow-hidden bg-background">
+  <div class="app-viewport flex min-h-0 overflow-hidden bg-background">
     <Sidebar
       :projects="projects"
       :conversations="conversations"
@@ -84,7 +84,7 @@ const topBarTitle = computed(() => {
       @toggle-collapsed="toggleSidebar"
     />
 
-    <div class="flex min-w-0 flex-1 flex-col">
+    <div class="flex min-h-0 min-w-0 flex-1 flex-col">
       <TopBar
         :title="topBarTitle"
         :status="providerStatus"
