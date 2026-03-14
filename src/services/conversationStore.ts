@@ -6,7 +6,10 @@ import type {
   ConversationMessage,
   ConversationRepository,
   ConversationSummary,
+  UserInputPayload,
+  UserConversationMessage,
 } from '@/types'
+import { normalizeUserInputPayload } from '@/utils/attachments'
 
 function cloneValue<T>(value: T): T {
   if (typeof globalThis.structuredClone === 'function') {
@@ -49,7 +52,26 @@ async function loadConversationOrThrow(conversationId: string) {
 }
 
 function normalizeMessages(messages: ConversationMessage[] | undefined) {
-  return Array.isArray(messages) ? cloneValue(messages) : []
+  if (!Array.isArray(messages)) return []
+
+  return messages.map((message) => normalizeConversationMessage(message)).filter(Boolean) as ConversationMessage[]
+}
+
+function normalizeConversationMessage(message: ConversationMessage | Record<string, unknown> | null | undefined) {
+  if (!message || typeof message !== 'object') return null
+
+  if (message.role === 'user') {
+    const userMessage = message as Record<string, unknown>
+
+    return {
+      id: typeof userMessage.id === 'string' ? userMessage.id : undefined,
+      role: 'user',
+      input: normalizeUserInputPayload(userMessage.input ?? userMessage.content ?? ''),
+      created_at: typeof userMessage.created_at === 'string' ? userMessage.created_at : undefined,
+    } satisfies UserConversationMessage
+  }
+
+  return cloneValue(message as ConversationMessage)
 }
 
 async function ensureProjectId(projectId?: string) {
@@ -120,10 +142,16 @@ export const conversationStore: ConversationRepository & {
   async getConversation(conversationId: string) {
     await projectStore.ensureDefaultProject()
     const conversation = await withStore('conversations', 'readonly', (store) =>
-      requestToPromise(asObjectStore(store).get(conversationId) as IDBRequest<Conversation | undefined>),
+      requestToPromise(asObjectStore(store).get(conversationId) as IDBRequest<Conversation | Record<string, unknown> | undefined>),
     )
 
-    return conversation ? cloneValue(conversation) : null
+    if (!conversation) return null
+
+    return cloneValue({
+      ...(conversation as Conversation),
+      title: String((conversation as Conversation).title ?? '').trim(),
+      messages: normalizeMessages((conversation as Conversation).messages),
+    })
   },
 
   async saveConversation(conversation: Conversation) {
@@ -142,12 +170,12 @@ export const conversationStore: ConversationRepository & {
     return cloneValue(normalized)
   },
 
-  async addUserMessage(conversationId: string, content: string) {
+  async addUserMessage(conversationId: string, input: UserInputPayload) {
     const conversation = await loadConversationOrThrow(conversationId)
     conversation.messages.push({
       id: createId('user'),
       role: 'user',
-      content,
+      input: normalizeUserInputPayload(input),
       created_at: new Date().toISOString(),
     })
     await this.saveConversation(conversation)

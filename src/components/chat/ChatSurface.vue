@@ -2,9 +2,17 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { LoaderCircle, MessageSquareText, Pencil, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
-import type { ChatCompletionDiagnostics } from '@/types'
+import type { ChatCompletionDiagnostics, Conversation, UserConversationMessage, UserInputPayload } from '@/types'
 import { cn } from '@/utils'
+import {
+  cloneUserInputPayload,
+  createEmptyUserInput,
+  hasUserInputContent,
+  normalizeUserInputPayload,
+  serializeUserInputForClipboard,
+} from '@/utils/attachments'
 import Button from '@/components/ui/button/Button.vue'
+import AttachmentList from './AttachmentList.vue'
 import ChatComposer from './ChatComposer.vue'
 import CopyButton from '@/components/common/CopyButton.vue'
 import MarkdownRenderer from '@/components/common/MarkdownRenderer.vue'
@@ -19,10 +27,7 @@ interface ConversationMessageBase {
   role: 'user' | 'assistant'
 }
 
-interface UserMessage extends ConversationMessageBase {
-  role: 'user'
-  content: string
-}
+type UserMessage = UserConversationMessage & ConversationMessageBase
 
 interface StageOneResponse {
   model: string
@@ -81,9 +86,7 @@ interface AssistantMessage extends ConversationMessageBase {
   } | null
 }
 
-interface ConversationDetail {
-  id: string
-  title: string
+type ConversationDetail = Pick<Conversation, 'id' | 'title'> & {
   messages: Array<UserMessage | AssistantMessage>
 }
 
@@ -99,7 +102,7 @@ type RunStatus = 'idle' | 'running' | 'complete' | 'error' | 'stopped'
 const props = withDefaults(
   defineProps<{
     conversation?: ConversationDetail | null
-    draft?: string
+    draft?: UserInputPayload
     chatRunPreferences?: {
       targetStage: StageKey
       selectedCouncilModels: string[]
@@ -114,7 +117,7 @@ const props = withDefaults(
   }>(),
   {
     conversation: null,
-    draft: '',
+    draft: createEmptyUserInput,
     chatRunPreferences: () => ({
       targetStage: 'stage3' as const,
       selectedCouncilModels: [] as string[],
@@ -130,13 +133,13 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  (event: 'update:draft', value: string): void
+  (event: 'update:draft', value: UserInputPayload): void
   (event: 'update-target-stage', value: StageKey): void
   (event: 'toggle-model', model: string): void
-  (event: 'send', value: string): void
+  (event: 'send', value: UserInputPayload): void
   (event: 'new-conversation'): void
   (event: 'open-settings'): void
-  (event: 'rerun', value: string): void
+  (event: 'rerun', value: UserInputPayload): void
   (event: 'retry-recovery'): void
   (event: 'stop'): void
 }>()
@@ -148,8 +151,8 @@ const isEditingLatestPrompt = ref(false)
 const editingPrompt = ref('')
 
 const draftValue = computed({
-  get: () => props.draft,
-  set: (value: string) => emit('update:draft', value),
+  get: () => normalizeUserInputPayload(props.draft),
+  set: (value: UserInputPayload) => emit('update:draft', cloneUserInputPayload(value)),
 })
 
 const stageRank: Record<StageKey, number> = {
@@ -274,7 +277,17 @@ const emptyStageAvailability: Record<StageKey, boolean> = {
   stage3: false,
 }
 
-const handleSend = (value: string) => emit('send', value)
+const userInputForMessage = (message: UserMessage) => normalizeUserInputPayload(message.input)
+const latestUserInput = computed(() =>
+  latestUserEntry.value ? userInputForMessage(latestUserEntry.value.message) : createEmptyUserInput(),
+)
+const latestEditedUserInput = computed(() => ({
+  ...latestUserInput.value,
+  text: editingPrompt.value.trim(),
+}))
+const canRerunLatestPrompt = computed(() => hasUserInputContent(latestEditedUserInput.value))
+
+const handleSend = (value: UserInputPayload) => emit('send', value)
 const handleTargetStageChange = (value: StageKey) => emit('update-target-stage', value)
 const handleToggleModel = (model: string) => emit('toggle-model', model)
 const autosizeEditTextarea = () => {
@@ -287,7 +300,7 @@ const autosizeEditTextarea = () => {
 const startEditingLatestPrompt = async () => {
   if (props.isLoading || !latestUserEntry.value) return
   isEditingLatestPrompt.value = true
-  editingPrompt.value = latestUserEntry.value.message.content
+  editingPrompt.value = userInputForMessage(latestUserEntry.value.message).text
   await nextTick()
   editTextareaRef.value?.focus()
   editTextareaRef.value?.setSelectionRange(editingPrompt.value.length, editingPrompt.value.length)
@@ -300,9 +313,8 @@ const cancelEditingLatestPrompt = () => {
 }
 
 const handleRerun = () => {
-  const value = editingPrompt.value.trim()
-  if (!value || props.isLoading) return
-  emit('rerun', value)
+  if (!canRerunLatestPrompt.value || props.isLoading) return
+  emit('rerun', latestEditedUserInput.value)
   cancelEditingLatestPrompt()
 }
 
@@ -471,7 +483,10 @@ watch(editingPrompt, () => {
 })
 
 watch(
-  () => latestUserEntry.value?.message.id || latestUserEntry.value?.message.content || '',
+  () =>
+    latestUserEntry.value
+      ? `${latestUserEntry.value.message.id || ''}:${latestUserInput.value.text}:${latestUserInput.value.attachments.map((attachment) => attachment.id).join('|')}`
+      : '',
   () => {
     if (!latestUserEntry.value) {
       cancelEditingLatestPrompt()
@@ -622,7 +637,15 @@ watch(
                     <CopyButton
                       icon-only
                       :title="t('copyMessage')"
-                      :get-text="() => (isLatestUserMessage(index) && isEditingLatestPrompt ? editingPrompt : (message as UserMessage).content)"
+                      :get-text="
+                        () =>
+                          serializeUserInputForClipboard(
+                            isLatestUserMessage(index) && isEditingLatestPrompt
+                              ? latestEditedUserInput
+                              : userInputForMessage(message as UserMessage),
+                            locale,
+                          )
+                      "
                     />
                   </div>
                 </div>
@@ -637,18 +660,34 @@ watch(
                       @input="autosizeEditTextarea"
                       @keydown="handleEditKeydown"
                     />
+                    <div
+                      v-if="latestUserInput.attachments.length"
+                      class="rounded-[1.2rem] border border-border/70 bg-background/70 px-4 py-3"
+                    >
+                      <div class="mb-3 text-xs font-medium text-muted-foreground">
+                        {{ t('conversationAttachmentsRetained') }}
+                      </div>
+                      <AttachmentList :attachments="latestUserInput.attachments" />
+                    </div>
                     <div class="flex justify-end gap-2">
                       <Button
                         size="sm"
                         class="h-9 rounded-full px-4"
-                        :disabled="isLoading || !editingPrompt.trim()"
+                        :disabled="isLoading || !canRerunLatestPrompt"
                         @click="handleRerun"
                       >
                         {{ t('conversationRunAgain') }}
                       </Button>
                     </div>
                   </div>
-                  <MarkdownRenderer v-else :source="(message as UserMessage).content" class="prose-p:my-3" />
+                  <div v-else class="space-y-4">
+                    <MarkdownRenderer
+                      v-if="userInputForMessage(message as UserMessage).text"
+                      :source="userInputForMessage(message as UserMessage).text"
+                      class="prose-p:my-3"
+                    />
+                    <AttachmentList :attachments="userInputForMessage(message as UserMessage).attachments" />
+                  </div>
                 </div>
               </div>
 

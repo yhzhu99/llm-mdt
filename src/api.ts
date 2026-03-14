@@ -165,7 +165,7 @@ export const api = {
     const settings = await settingsStore.get()
     return runMdtConversationStream({
       conversationId,
-      content: payload.content || '',
+      input: payload.input,
       locale: payload.locale,
       settings,
       onEvent,

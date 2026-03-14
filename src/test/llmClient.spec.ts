@@ -39,6 +39,108 @@ describe('llmClient Anthropic routing', () => {
   })
 })
 
+describe('llmClient multimodal payloads', () => {
+  it('builds Responses payloads with text, image, and file parts', () => {
+    const payload = __private__.buildPayload(
+      {
+        mode: 'responses',
+        endpoint: 'https://api.openai.com/v1/responses',
+      },
+      {
+        model: 'openai/gpt-5.4',
+        stream: false,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Inspect the attachments.' },
+              { type: 'image', imageUrl: 'data:image/png;base64,AAAA', mimeType: 'image/png', name: 'scan.png' },
+              {
+                type: 'file',
+                fileName: 'report.pdf',
+                dataUrl: 'data:application/pdf;base64,BBBB',
+                mimeType: 'application/pdf',
+                textContent: null,
+              },
+              {
+                type: 'file',
+                fileName: 'notes.txt',
+                dataUrl: 'data:text/plain;base64,Qm9keQ==',
+                mimeType: 'text/plain',
+                textContent: 'Body',
+              },
+            ],
+          },
+        ],
+      },
+    )
+
+    expect(payload).toMatchObject({
+      model: 'openai/gpt-5.4',
+      input: [
+        {
+          role: 'user',
+          content: [
+            { type: 'input_text', text: 'Inspect the attachments.' },
+            { type: 'input_image', image_url: 'data:image/png;base64,AAAA' },
+            { type: 'input_file', filename: 'report.pdf', file_data: 'data:application/pdf;base64,BBBB' },
+            { type: 'input_file', filename: 'notes.txt', file_data: 'data:text/plain;base64,Qm9keQ==' },
+          ],
+        },
+      ],
+    })
+  })
+
+  it('builds Chat Completions payloads with multimodal user content', () => {
+    const payload = __private__.buildPayload(
+      {
+        mode: 'chat-completions',
+        endpoint: 'https://api.openai.com/v1/chat/completions',
+      },
+      {
+        model: 'openai/gpt-5.4',
+        stream: false,
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Inspect the attachments.' },
+              { type: 'image', imageUrl: 'data:image/png;base64,AAAA', mimeType: 'image/png', name: 'scan.png' },
+              {
+                type: 'file',
+                fileName: 'report.pdf',
+                dataUrl: 'data:application/pdf;base64,BBBB',
+                mimeType: 'application/pdf',
+                textContent: null,
+              },
+            ],
+          },
+        ],
+      },
+    )
+
+    expect(payload).toMatchObject({
+      model: 'openai/gpt-5.4',
+      messages: [
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: 'Inspect the attachments.' },
+            { type: 'image_url', image_url: { url: 'data:image/png;base64,AAAA' } },
+            {
+              type: 'file',
+              file: {
+                filename: 'report.pdf',
+                file_data: 'data:application/pdf;base64,BBBB',
+              },
+            },
+          ],
+        },
+      ],
+    })
+  })
+})
+
 describe('llmClient Anthropic payloads', () => {
   it('uses adaptive thinking for Claude 4.6 models', () => {
     const payload = __private__.buildAnthropicMessageParams(
@@ -93,6 +195,73 @@ describe('llmClient Anthropic payloads', () => {
     )
 
     expect(payload.stream).toBe(true)
+  })
+
+  it('maps multimodal user content to Anthropic image and document blocks', () => {
+    const payload = __private__.buildAnthropicMessageParams(
+      {
+        model: 'anthropic/claude-sonnet-4.5',
+        messages: [
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Inspect the attachments.' },
+              { type: 'image', imageUrl: 'data:image/png;base64,AAAA', mimeType: 'image/png', name: 'scan.png' },
+              {
+                type: 'file',
+                fileName: 'report.pdf',
+                dataUrl: 'data:application/pdf;base64,BBBB',
+                mimeType: 'application/pdf',
+                textContent: null,
+              },
+              {
+                type: 'file',
+                fileName: 'notes.txt',
+                dataUrl: 'data:text/plain;base64,Qm9keQ==',
+                mimeType: 'text/plain',
+                textContent: 'Plain text body',
+              },
+            ],
+          },
+        ],
+      },
+      false,
+    )
+
+    expect(payload.messages).toEqual([
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: 'Inspect the attachments.' },
+          {
+            type: 'image',
+            source: {
+              type: 'base64',
+              media_type: 'image/png',
+              data: 'AAAA',
+            },
+          },
+          {
+            type: 'document',
+            source: {
+              type: 'base64',
+              media_type: 'application/pdf',
+              data: 'BBBB',
+            },
+            title: 'report.pdf',
+          },
+          {
+            type: 'document',
+            source: {
+              type: 'text',
+              media_type: 'text/plain',
+              data: 'Plain text body',
+            },
+            title: 'notes.txt',
+          },
+        ],
+      },
+    ])
   })
 })
 

@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
-import { ArrowUp, LoaderCircle, Settings2 } from 'lucide-vue-next'
+import { ArrowUp, LoaderCircle, Paperclip, Settings2 } from 'lucide-vue-next'
 import { useI18n } from '@/i18n'
 import Button from '@/components/ui/button/Button.vue'
-import type { MdtTargetStage } from '@/types'
+import AttachmentList from './AttachmentList.vue'
+import type { MdtTargetStage, UserInputPayload } from '@/types'
+import {
+  ATTACHMENT_INPUT_ACCEPT,
+  cloneUserInputPayload,
+  createEmptyUserInput,
+  hasUserInputContent,
+  normalizeUserInputPayload,
+  readFilesAsAttachments,
+} from '@/utils/attachments'
 
 const props = withDefaults(
   defineProps<{
@@ -27,16 +36,36 @@ const props = withDefaults(
 )
 
 const emit = defineEmits<{
-  (event: 'send', message: string): void
+  (event: 'send', message: UserInputPayload): void
   (event: 'open-settings'): void
   (event: 'update:target-stage', value: MdtTargetStage): void
   (event: 'toggle-model', model: string): void
 }>()
 
 const { t } = useI18n()
-const input = defineModel<string>({ default: '' })
+const input = defineModel<UserInputPayload>({
+  default: createEmptyUserInput,
+})
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
+const isProcessingAttachments = ref(false)
+const attachmentError = ref('')
 const selectedModelSet = computed(() => new Set(props.selectedModels))
+const normalizedInput = computed({
+  get: () => normalizeUserInputPayload(input.value),
+  set: (value: UserInputPayload) => {
+    input.value = cloneUserInputPayload(value)
+  },
+})
+const textValue = computed({
+  get: () => normalizedInput.value.text,
+  set: (value: string) => {
+    normalizedInput.value = {
+      ...normalizedInput.value,
+      text: value,
+    }
+  },
+})
 const stageOptions = computed(() => [
   { key: 'stage1' as const, label: t('stage1Title') },
   { key: 'stage2' as const, label: t('stage2Title') },
@@ -47,7 +76,7 @@ const canSubmit = computed(
     !props.disabled &&
     props.providerConfigured &&
     props.selectedModels.length > 0 &&
-    Boolean(input.value.trim()),
+    hasUserInputContent(normalizedInput.value),
 )
 const showRunConfig = computed(() => props.providerConfigured && props.availableModels.length > 0)
 
@@ -58,17 +87,22 @@ const autosize = () => {
   textarea.style.height = `${Math.min(textarea.scrollHeight, props.centered ? 360 : 280)}px`
 }
 
-watch(input, () => {
-  nextTick(() => autosize())
-}, { immediate: true })
+watch(
+  () => textValue.value,
+  () => {
+    nextTick(() => autosize())
+  },
+  { immediate: true },
+)
 
 const handleSubmit = async () => {
   if (props.disabled || !props.providerConfigured) return
-  const value = input.value.trim()
-  if (!value || props.selectedModels.length === 0) return
+  const value = cloneUserInputPayload(normalizedInput.value)
+  if (!hasUserInputContent(value) || props.selectedModels.length === 0) return
 
   emit('send', value)
-  input.value = ''
+  input.value = createEmptyUserInput()
+  attachmentError.value = ''
   await nextTick()
   textareaRef.value?.focus()
   autosize()
@@ -78,6 +112,47 @@ const handleKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     void handleSubmit()
+  }
+}
+
+const handleOpenFilePicker = () => {
+  if (props.disabled || !props.providerConfigured || isProcessingAttachments.value) return
+  fileInputRef.value?.click()
+}
+
+const handleFileInputChange = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  const files = Array.from(target.files || [])
+  if (files.length === 0) return
+
+  attachmentError.value = ''
+  isProcessingAttachments.value = true
+
+  try {
+    const { accepted, rejected } = await readFilesAsAttachments(files)
+
+    if (accepted.length > 0) {
+      normalizedInput.value = {
+        ...normalizedInput.value,
+        attachments: [...normalizedInput.value.attachments, ...accepted],
+      }
+    }
+
+    if (rejected.length > 0) {
+      attachmentError.value = t('composerAttachmentUnsupported')
+    }
+  } catch {
+    attachmentError.value = t('composerAttachmentReadFailed')
+  } finally {
+    isProcessingAttachments.value = false
+    target.value = ''
+  }
+}
+
+const removeAttachment = (attachmentId: string) => {
+  normalizedInput.value = {
+    ...normalizedInput.value,
+    attachments: normalizedInput.value.attachments.filter((attachment) => attachment.id !== attachmentId),
   }
 }
 
@@ -93,9 +168,18 @@ const isOnlySelectedModel = (model: string) =>
     @submit.prevent="handleSubmit"
   >
     <div class="relative p-4 sm:p-5">
+      <input
+        ref="fileInputRef"
+        type="file"
+        multiple
+        class="hidden"
+        :accept="ATTACHMENT_INPUT_ACCEPT"
+        @change="handleFileInputChange"
+      />
+
       <textarea
         ref="textareaRef"
-        v-model="input"
+        v-model="textValue"
         :disabled="disabled || !providerConfigured"
         :rows="centered ? 6 : 4"
         :placeholder="t('composerPlaceholder')"
@@ -107,8 +191,48 @@ const isOnlySelectedModel = (model: string) =>
         @keydown="handleKeydown"
       />
 
+      <div v-if="normalizedInput.attachments.length" class="mt-4 border-t border-border/60 pt-4">
+        <AttachmentList
+          :attachments="normalizedInput.attachments"
+          removable
+          :disabled="disabled || isProcessingAttachments"
+          @remove="removeAttachment"
+        />
+      </div>
+
+      <div
+        v-if="attachmentError"
+        class="mt-3 rounded-xl border border-destructive/15 bg-destructive/5 px-3 py-2 text-xs text-destructive"
+      >
+        {{ attachmentError }}
+      </div>
+
       <div class="mt-3 flex items-end gap-3 border-t border-border/70 pt-3">
         <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-full border border-border/70 bg-background/80 px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            :disabled="disabled || !providerConfigured || isProcessingAttachments"
+            @click="handleOpenFilePicker"
+          >
+            <Paperclip :size="14" />
+            {{ t('composerAttach') }}
+          </button>
+
+          <div
+            v-if="isProcessingAttachments"
+            class="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary"
+          >
+            <LoaderCircle :size="12" class="animate-spin" />
+            {{ t('composerAttachmentReading') }}
+          </div>
+          <div
+            v-else-if="normalizedInput.attachments.length"
+            class="inline-flex items-center gap-2 rounded-full bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground"
+          >
+            {{ t('composerAttachmentCount', { count: normalizedInput.attachments.length }) }}
+          </div>
+
           <template v-if="showRunConfig">
             <div class="inline-flex flex-wrap gap-1 rounded-full border border-border/70 bg-background/80 p-1">
               <button

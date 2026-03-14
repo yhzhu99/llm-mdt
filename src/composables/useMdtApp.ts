@@ -21,8 +21,16 @@ import type {
   Stage2StreamState,
   Stage3StreamState,
   StreamStatusMeta,
+  UserInputPayload,
 } from '@/types'
 import { isAbortError } from '@/utils'
+import {
+  cloneUserInputPayload,
+  createEmptyUserInput,
+  getAttachmentValidationMessage,
+  hasUserInputContent,
+  normalizeUserInputPayload,
+} from '@/utils/attachments'
 import {
   createRunConfig,
   getProviderStatusText,
@@ -80,12 +88,12 @@ const createAssistantMessage = (runConfig: MdtRunConfig): LiveAssistantMessage =
   },
 })
 
-const createUserMessage = (content: string) => ({
+const createUserMessage = (input: UserInputPayload) => ({
   id:
     (globalThis.crypto?.randomUUID && globalThis.crypto.randomUUID()) ||
     `user_${Date.now()}_${Math.random().toString(16).slice(2)}`,
   role: 'user' as const,
-  content,
+  input: cloneUserInputPayload(input),
   created_at: new Date().toISOString(),
 })
 
@@ -203,7 +211,7 @@ export function useMdtApp() {
   const projects = ref<ProjectSummary[]>([])
   const currentConversationId = ref<string | null>(null)
   const currentProjectId = ref<string | null>(null)
-  const draftMessage = ref('')
+  const draftMessage = ref<UserInputPayload>(createEmptyUserInput())
   const providerSettings = ref<ProviderSettings | null>(null)
   const isSettingsOpen = ref(false)
   const settingsError = ref('')
@@ -299,6 +307,10 @@ export function useMdtApp() {
     conversations.value.find((entry) => entry.id === conversationId) || null
 
   const getRunState = (conversationId: string) => conversationRunStates.value[conversationId] || createIdleRunState()
+
+  const getRunAttachmentValidationMessage = (input: UserInputPayload, runConfig: MdtRunConfig) => {
+    return getAttachmentValidationMessage(input, runConfig.councilModels, locale.value)
+  }
 
   const getLatestAssistantMessageId = (conversationId: string) => {
     const conversation = conversationCache.value[conversationId]
@@ -775,7 +787,7 @@ export function useMdtApp() {
 
   const resetDraftState = () => {
     currentConversationId.value = null
-    draftMessage.value = ''
+    draftMessage.value = createEmptyUserInput()
   }
 
   const goHome = () => {
@@ -951,7 +963,7 @@ export function useMdtApp() {
     requestId,
     assistantMessageId,
     userMessageId,
-    content,
+    input,
     runConfig,
     shouldGenerateTitle,
     startedAt,
@@ -961,7 +973,7 @@ export function useMdtApp() {
     requestId: string
     assistantMessageId: string
     userMessageId: string
-    content: string
+    input: UserInputPayload
     runConfig: MdtRunConfig
     shouldGenerateTitle: boolean
     startedAt: string
@@ -971,7 +983,7 @@ export function useMdtApp() {
     requestId,
     assistantMessageId,
     userMessageId,
-    content,
+    input: cloneUserInputPayload(input),
     locale: locale.value,
     runConfig,
     shouldGenerateTitle,
@@ -1002,7 +1014,7 @@ export function useMdtApp() {
     assistantMessageId,
     assistantMessageCreatedAt,
     userMessageId,
-    content,
+    input,
     runConfig,
     shouldGenerateTitle,
     messageLocale,
@@ -1012,7 +1024,7 @@ export function useMdtApp() {
     assistantMessageId: string
     assistantMessageCreatedAt?: string
     userMessageId: string
-    content: string
+    input: UserInputPayload
     runConfig: MdtRunConfig
     shouldGenerateTitle: boolean
     messageLocale: 'zh-CN' | 'en'
@@ -1025,7 +1037,7 @@ export function useMdtApp() {
       requestId,
       assistantMessageId,
       userMessageId,
-      content,
+      input,
       runConfig,
       shouldGenerateTitle,
       startedAt,
@@ -1056,7 +1068,7 @@ export function useMdtApp() {
       requestId,
       assistantMessageId,
       assistantMessageCreatedAt,
-      content,
+      input,
       runConfig,
       shouldGenerateTitle,
       messageLocale,
@@ -1190,7 +1202,7 @@ export function useMdtApp() {
     requestId,
     assistantMessageId,
     assistantMessageCreatedAt,
-    content,
+    input,
     runConfig,
     shouldGenerateTitle,
     messageLocale,
@@ -1200,7 +1212,7 @@ export function useMdtApp() {
     requestId: string
     assistantMessageId: string
     assistantMessageCreatedAt?: string
-    content: string
+    input: UserInputPayload
     runConfig: MdtRunConfig
     shouldGenerateTitle: boolean
     messageLocale: 'zh-CN' | 'en'
@@ -1274,7 +1286,7 @@ export function useMdtApp() {
     try {
       await api.sendMessageStream(
         conversationId,
-        { content, locale: messageLocale },
+        { input, locale: messageLocale },
         async (_eventType, event) => {
           if (!isMatchingRequest(conversationId, requestId)) return
           if (event.type !== 'stopped' && !isActiveRequest(conversationId, requestId)) return
@@ -1674,6 +1686,31 @@ export function useMdtApp() {
             ...(existingAssistantMessage?.runConfig || {}),
             targetStage: run.stage === 'stage1' || run.stage === 'stage2' || run.stage === 'stage3' ? run.stage : 'stage3',
           })
+          const runInput = normalizeUserInputPayload(run.input)
+          const validationMessage = getRunAttachmentValidationMessage(runInput, runConfig)
+
+          if (validationMessage) {
+            const now = new Date().toISOString()
+            updateConversationRunState(run.conversationId, (state) => ({
+              ...state,
+              requestId: run.requestId,
+              status: 'error',
+              stage: run.stage || 'stage1',
+              startedAt: run.startedAt,
+              completedAt: now,
+              lastActivityAt: now,
+              lastError: validationMessage,
+              hasUnreadUpdate: currentConversationId.value === run.conversationId ? false : true,
+              isRecovering: false,
+            }))
+            await syncPersistedRunProgress(run.conversationId, run.requestId, {
+              status: 'error',
+              updatedAt: now,
+              lastError: validationMessage,
+            })
+            resumingRunIds.delete(run.conversationId)
+            return
+          }
 
           await prepareAssistantPlaceholder({
             conversationId: run.conversationId,
@@ -1693,7 +1730,7 @@ export function useMdtApp() {
             assistantMessageId: run.assistantMessageId,
             assistantMessageCreatedAt:
               existingAssistantMessage?.created_at || run.startedAt,
-            content: run.content,
+            input: runInput,
             runConfig,
             shouldGenerateTitle,
             messageLocale: run.locale,
@@ -1749,9 +1786,9 @@ export function useMdtApp() {
     activeRunControllers.get(conversationId)?.controller.abort()
   }
 
-  const rerunConversation = async (content: string, conversationId = currentConversationId.value) => {
-    const trimmedContent = String(content || '').trim()
-    if (!trimmedContent || !conversationId) return
+  const rerunConversation = async (input: UserInputPayload, conversationId = currentConversationId.value) => {
+    const nextInput = normalizeUserInputPayload(input)
+    if (!hasUserInputContent(nextInput) || !conversationId) return
 
     if (!providerConfigured.value) {
       lastProviderError.value = t('errorConfigureProviderBeforeSend')
@@ -1788,6 +1825,12 @@ export function useMdtApp() {
       return
     }
 
+    const validationMessage = getRunAttachmentValidationMessage(nextInput, runConfig)
+    if (validationMessage) {
+      lastProviderError.value = validationMessage
+      return
+    }
+
     lastProviderError.value = ''
 
     const assistantMessage = createRunningAssistantPlaceholder(runConfig)
@@ -1800,7 +1843,7 @@ export function useMdtApp() {
       nextMessages[latestUserMessageIndex] = {
         ...nextMessages[latestUserMessageIndex],
         role: 'user',
-        content: trimmedContent,
+        input: cloneUserInputPayload(nextInput),
       }
 
       nextMessages.push(assistantMessage)
@@ -1835,16 +1878,16 @@ export function useMdtApp() {
       assistantMessageId: assistantMessage.id,
       assistantMessageCreatedAt: assistantMessage.created_at,
       userMessageId: latestUserMessage.id || createRequestId(),
-      content: trimmedContent,
+      input: nextInput,
       runConfig,
       shouldGenerateTitle,
       messageLocale: locale.value,
     })
   }
 
-  const sendMessage = async (content: string) => {
-    const trimmedContent = String(content || '').trim()
-    if (!trimmedContent) return
+  const sendMessage = async (input: UserInputPayload) => {
+    const nextInput = normalizeUserInputPayload(input)
+    if (!hasUserInputContent(nextInput)) return
 
     if (!providerConfigured.value) {
       lastProviderError.value = t('errorConfigureProviderBeforeSend')
@@ -1886,10 +1929,16 @@ export function useMdtApp() {
       return
     }
 
+    const validationMessage = getRunAttachmentValidationMessage(nextInput, runConfig)
+    if (validationMessage) {
+      lastProviderError.value = validationMessage
+      return
+    }
+
     lastProviderError.value = ''
 
     const assistantMessage = createRunningAssistantPlaceholder(runConfig)
-    const userMessage = createUserMessage(trimmedContent)
+    const userMessage = createUserMessage(nextInput)
     const optimisticCreatedAt = conversationForRequest.created_at || new Date().toISOString()
     const optimisticTitle = String(conversationForRequest.title || t('conversationUntitled')).trim()
     const shouldGenerateTitle = existingMessageCount === 0 || !hasResolvedConversationTitle(conversationForRequest)
@@ -1944,7 +1993,7 @@ export function useMdtApp() {
       assistantMessageId: assistantMessage.id,
       assistantMessageCreatedAt: assistantMessage.created_at,
       userMessageId: userMessage.id || createRequestId(),
-      content: trimmedContent,
+      input: nextInput,
       runConfig,
       shouldGenerateTitle,
       messageLocale: locale.value,

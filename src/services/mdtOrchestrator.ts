@@ -2,6 +2,13 @@ import { conversationStore } from './conversationStore'
 import { chatCompletion, chatCompletionStream } from './llmClient'
 import { isProviderConfigured } from './providerSettings'
 import { translate } from '@/i18n'
+import {
+  buildChatCompletionContentParts,
+  getAttachmentValidationMessage,
+  normalizeUserInputPayload,
+  summarizeAttachments,
+  summarizeUserInputForTitle,
+} from '@/utils/attachments'
 import { createRunConfig } from '@/utils/conversations'
 import { isAbortError, pickBestReasoningText } from '@/utils'
 import type {
@@ -18,6 +25,7 @@ import type {
   Stage1Result,
   Stage2Result,
   Stage3Result,
+  UserInputPayload,
 } from '@/types'
 
 function createId(prefix = 'id') {
@@ -28,10 +36,45 @@ function createId(prefix = 'id') {
   return `${prefix}_${Date.now()}_${Math.random().toString(16).slice(2)}`
 }
 
-function buildUserMessage(userQuery: string): ChatCompletionMessage {
+function buildUserInputSummary(userInput: UserInputPayload, locale: AppLocale) {
+  const normalizedInput = normalizeUserInputPayload(userInput)
+  const text = normalizedInput.text.trim()
+  const attachmentSummary = summarizeAttachments(normalizedInput.attachments, locale)
+
+  if (text && attachmentSummary) {
+    return `${text}\n\n${attachmentSummary}`
+  }
+
+  if (text) return text
+  if (attachmentSummary) {
+    return locale === 'zh-CN'
+      ? `用户未提供额外文字，请结合本消息附带的原始图片/文件理解问题。\n\n${attachmentSummary}`
+      : `No additional text was provided. Use the original uploaded images/files attached to this message.\n\n${attachmentSummary}`
+  }
+
+  return locale === 'zh-CN' ? '请基于用户输入完成任务。' : 'Use the user input to complete the task.'
+}
+
+function buildPromptMessage(prompt: string, userInput: UserInputPayload): ChatCompletionMessage {
   return {
     role: 'user',
-    content: userQuery,
+    content: buildChatCompletionContentParts(prompt, userInput.attachments),
+  }
+}
+
+function buildStage1UserMessage(userInput: UserInputPayload, locale: AppLocale): ChatCompletionMessage {
+  const normalizedInput = normalizeUserInputPayload(userInput)
+  const text =
+    normalizedInput.text.trim() ||
+    (normalizedInput.attachments.length > 0
+      ? locale === 'zh-CN'
+        ? '请基于上传的图片/文件完成回答。'
+        : 'Answer based on the uploaded images/files.'
+      : '')
+
+  return {
+    role: 'user',
+    content: buildChatCompletionContentParts(text, normalizedInput.attachments),
   }
 }
 
@@ -217,8 +260,15 @@ function buildAnonymizedResponseLabelMap(stage1Results: Stage1Result[], locale: 
   return new Map(stage1Results.map((result, index) => [result.model, getResponseLabel(locale, index)]))
 }
 
-function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[], locale: AppLocale) {
+function buildRankingPrompt(userInput: UserInputPayload, stage1Results: Stage1Result[], locale: AppLocale) {
   const copy = getPromptCopy(locale)
+  const userQuestion = buildUserInputSummary(userInput, locale)
+  const uploadedMaterialsNote =
+    userInput.attachments.length > 0
+      ? locale === 'zh-CN'
+        ? '本消息附带了用户原始上传的图片/文件，请结合这些材料评议匿名回答。'
+        : 'This message includes the original user-uploaded images/files. Use those materials when evaluating the anonymized responses.'
+      : ''
 
   if (locale === 'zh-CN') {
     return buildPromptDocument('stage2', locale, [
@@ -227,7 +277,11 @@ function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[], lo
       buildXmlBlock('language_policy', `所有可见输出必须使用${copy.languageName}。`),
       buildXmlBlock(
         'given_materials',
-        [buildXmlBlock('user_question', userQuery), buildXmlBlock('candidate_responses', buildStage2ResponseMaterials(stage1Results, locale))].join('\n\n'),
+        [
+          buildXmlBlock('user_question', userQuestion),
+          ...(uploadedMaterialsNote ? [buildXmlBlock('uploaded_materials', uploadedMaterialsNote)] : []),
+          buildXmlBlock('candidate_responses', buildStage2ResponseMaterials(stage1Results, locale)),
+        ].join('\n\n'),
       ),
       buildXmlBlock(
         'instructions',
@@ -257,7 +311,11 @@ function buildRankingPrompt(userQuery: string, stage1Results: Stage1Result[], lo
     buildXmlBlock('language_policy', `All visible output must be in ${copy.languageName}.`),
     buildXmlBlock(
       'given_materials',
-      [buildXmlBlock('user_question', userQuery), buildXmlBlock('candidate_responses', buildStage2ResponseMaterials(stage1Results, locale))].join('\n\n'),
+      [
+        buildXmlBlock('user_question', userQuestion),
+        ...(uploadedMaterialsNote ? [buildXmlBlock('uploaded_materials', uploadedMaterialsNote)] : []),
+        buildXmlBlock('candidate_responses', buildStage2ResponseMaterials(stage1Results, locale)),
+      ].join('\n\n'),
     ),
     buildXmlBlock(
       'instructions',
@@ -353,13 +411,20 @@ Do not add a third heading.`
 }
 
 function buildChairmanPrompt(
-  userQuery: string,
+  userInput: UserInputPayload,
   stage1Results: Stage1Result[],
   stage2Results: Stage2Result[],
   metadata: RankingMetadata | null,
   locale: AppLocale,
 ) {
   const copy = getPromptCopy(locale)
+  const userQuestion = buildUserInputSummary(userInput, locale)
+  const uploadedMaterialsNote =
+    userInput.attachments.length > 0
+      ? locale === 'zh-CN'
+        ? '本消息附带了用户原始上传的图片/文件，请结合这些材料完成最终综合。'
+        : 'This message includes the original user-uploaded images/files. Use those materials in the final synthesis.'
+      : ''
 
   if (locale === 'zh-CN') {
     return buildPromptDocument('stage3', locale, [
@@ -369,7 +434,8 @@ function buildChairmanPrompt(
       buildXmlBlock(
         'given_materials',
         [
-          buildXmlBlock('user_question', userQuery),
+          buildXmlBlock('user_question', userQuestion),
+          ...(uploadedMaterialsNote ? [buildXmlBlock('uploaded_materials', uploadedMaterialsNote)] : []),
           buildXmlBlock('stage1_responses', buildStage3ResponseMaterials(stage1Results, locale)),
           buildXmlBlock('stage2_reviews', buildStage3ReviewMaterials(stage2Results)),
           buildXmlBlock('aggregate_rankings', buildAggregateRankingSummary(metadata, stage1Results, locale)),
@@ -405,7 +471,8 @@ function buildChairmanPrompt(
     buildXmlBlock(
       'given_materials',
       [
-        buildXmlBlock('user_question', userQuery),
+        buildXmlBlock('user_question', userQuestion),
+        ...(uploadedMaterialsNote ? [buildXmlBlock('uploaded_materials', uploadedMaterialsNote)] : []),
         buildXmlBlock('stage1_responses', buildStage3ResponseMaterials(stage1Results, locale)),
         buildXmlBlock('stage2_reviews', buildStage3ReviewMaterials(stage2Results)),
         buildXmlBlock('aggregate_rankings', buildAggregateRankingSummary(metadata, stage1Results, locale)),
@@ -434,15 +501,16 @@ function buildChairmanPrompt(
   ])
 }
 
-function buildTitlePrompt(userQuery: string, locale: AppLocale) {
+function buildTitlePrompt(userInput: UserInputPayload, locale: AppLocale) {
   const copy = getPromptCopy(locale)
+  const titleSource = summarizeUserInputForTitle(userInput, locale)
 
   if (locale === 'zh-CN') {
     return buildPromptDocument('title', locale, [
       buildXmlBlock('role', `你是${copy.panelName}对话的${copy.titleRole}。`),
       buildXmlBlock('objective', '为本次对话拟定一个简洁、准确的标题。'),
       buildXmlBlock('language_policy', `所有可见输出必须使用${copy.languageName}。`),
-      buildXmlBlock('given_materials', buildXmlBlock('user_question', userQuery)),
+      buildXmlBlock('given_materials', buildXmlBlock('user_question', titleSource)),
       buildXmlBlock(
         'instructions',
         buildNumberedRules([
@@ -468,7 +536,7 @@ function buildTitlePrompt(userQuery: string, locale: AppLocale) {
     buildXmlBlock('role', `You are the ${copy.titleRole} for a ${copy.panelName} conversation.`),
     buildXmlBlock('objective', 'Create a concise and accurate title for this conversation.'),
     buildXmlBlock('language_policy', `All visible output must be in ${copy.languageName}.`),
-    buildXmlBlock('given_materials', buildXmlBlock('user_question', userQuery)),
+    buildXmlBlock('given_materials', buildXmlBlock('user_question', titleSource)),
     buildXmlBlock(
       'instructions',
       buildNumberedRules([
@@ -657,7 +725,7 @@ async function collectStageResponses({
 }
 
 async function generateConversationTitle(
-  userQuery: string,
+  userInput: UserInputPayload,
   settings: ProviderSettings,
   client: ChatCompletionClient,
   locale: AppLocale,
@@ -671,7 +739,7 @@ async function generateConversationTitle(
   try {
     const response = await client.chatCompletion(settings, {
       model: titleModel,
-      messages: [{ role: 'user', content: buildTitlePrompt(userQuery, locale) }],
+      messages: [{ role: 'user', content: buildTitlePrompt(userInput, locale) }],
       timeoutMs: 30000,
       signal,
     })
@@ -695,7 +763,7 @@ async function generateConversationTitle(
 
 export async function runMdtConversationStream({
   conversationId,
-  content,
+  input,
   locale = 'zh-CN',
   settings,
   onEvent,
@@ -704,7 +772,7 @@ export async function runMdtConversationStream({
   client = { chatCompletion, chatCompletionStream },
 }: {
   conversationId: string
-  content: string
+  input: UserInputPayload
   locale?: AppLocale
   settings: ProviderSettings
   onEvent?: MdtEventHandler
@@ -732,8 +800,15 @@ export async function runMdtConversationStream({
       ? options.shouldGenerateTitle
       : (conversation.messages || []).length === 0
   const runConfig = createRunConfig(settings, options?.runConfig || null)
+  const normalizedInput = normalizeUserInputPayload(input)
+
+  const validationMessage = getAttachmentValidationMessage(normalizedInput, runConfig.councilModels, locale)
+  if (validationMessage) {
+    throw new Error(validationMessage)
+  }
+
   const titlePromise = isFirstMessage
-    ? generateConversationTitle(content, settings, client, locale, options?.signal).catch((error) => {
+    ? generateConversationTitle(normalizedInput, settings, client, locale, options?.signal).catch((error) => {
         if (isAbortError(error)) {
           return null
         }
@@ -742,7 +817,7 @@ export async function runMdtConversationStream({
     : Promise.resolve<string | null>(null)
 
   if (options?.persistUserMessage !== false) {
-    await conversationRepo.addUserMessage(conversationId, content)
+    await conversationRepo.addUserMessage(conversationId, normalizedInput)
   }
 
   let stage1Results: Stage1Result[] = []
@@ -754,7 +829,7 @@ export async function runMdtConversationStream({
     stage1Results = (await collectStageResponses({
       stagePrefix: 'stage1',
       models: runConfig.councilModels,
-      messages: [buildUserMessage(content)],
+      messages: [buildStage1UserMessage(normalizedInput, locale)],
       settings,
       client,
       emit,
@@ -779,7 +854,7 @@ export async function runMdtConversationStream({
       stage2Results = (await collectStageResponses({
         stagePrefix: 'stage2',
         models: runConfig.councilModels,
-        messages: [{ role: 'user', content: buildRankingPrompt(content, stage1Results, locale) }],
+        messages: [buildPromptMessage(buildRankingPrompt(normalizedInput, stage1Results, locale), normalizedInput)],
         settings,
         client,
         emit,
@@ -806,10 +881,7 @@ export async function runMdtConversationStream({
         for await (const event of client.chatCompletionStream(settings, {
           model: runConfig.chairmanModel,
           messages: [
-            {
-              role: 'user',
-              content: buildChairmanPrompt(content, stage1Results, stage2Results, metadata, locale),
-            },
+            buildPromptMessage(buildChairmanPrompt(normalizedInput, stage1Results, stage2Results, metadata, locale), normalizedInput),
           ],
           signal: options?.signal,
         })) {

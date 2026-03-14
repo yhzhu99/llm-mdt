@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import type {
   ChatCompletionClient,
+  ChatCompletionContentPart,
   ChatCompletionDiagnostics,
   ChatCompletionOptions,
   ChatCompletionResult,
@@ -355,16 +356,119 @@ function createRequestConfigs(baseUrl: string, preferredMode: ProviderRequestMod
   })
 }
 
+function getMessageContentParts(content: ChatCompletionOptions['messages'][number]['content']) {
+  if (Array.isArray(content)) {
+    return content
+  }
+
+  return [
+    {
+      type: 'text' as const,
+      text: String(content || ''),
+    },
+  ]
+}
+
+function getMessageTextContent(content: ChatCompletionOptions['messages'][number]['content']) {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  return content
+    .filter((part): part is Extract<ChatCompletionContentPart, { type: 'text' }> => part.type === 'text')
+    .map((part) => part.text)
+    .join('\n\n')
+}
+
+function extractBase64Data(dataUrl: string) {
+  const source = String(dataUrl || '')
+  const separatorIndex = source.indexOf(',')
+  return separatorIndex >= 0 ? source.slice(separatorIndex + 1) : source
+}
+
+function toAnthropicImageMediaType(mimeType: string): 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp' {
+  if (mimeType === 'image/jpeg' || mimeType === 'image/png' || mimeType === 'image/gif' || mimeType === 'image/webp') {
+    return mimeType
+  }
+
+  throw createRequestError(`Unsupported image MIME type for Anthropic: ${mimeType}`)
+}
+
+function buildResponsesContent(content: ChatCompletionOptions['messages'][number]['content']) {
+  const items: Array<Record<string, unknown>> = []
+
+  for (const part of getMessageContentParts(content)) {
+    if (part.type === 'text') {
+      if (part.text) {
+        items.push({ type: 'input_text', text: part.text })
+      }
+      continue
+    }
+
+    if (part.type === 'image') {
+      items.push({ type: 'input_image', image_url: part.imageUrl })
+      continue
+    }
+
+    items.push({ type: 'input_file', filename: part.fileName, file_data: part.dataUrl })
+  }
+
+  return items
+}
+
 function buildResponsesInput(messages: ChatCompletionOptions['messages']) {
   return messages.map((message) => ({
     role: message.role,
-    content: [
-      {
-        type: 'input_text',
-        text: message.content,
-      },
-    ],
+    content: buildResponsesContent(message.content),
   }))
+}
+
+function buildChatCompletionsMessages(messages: ChatCompletionOptions['messages']) {
+  return messages.map((message) => {
+    if (typeof message.content === 'string') {
+      return message
+    }
+
+    if (message.role !== 'user') {
+      return {
+        ...message,
+        content: getMessageTextContent(message.content),
+      }
+    }
+
+    const contentItems: Array<Record<string, unknown>> = []
+    for (const part of message.content) {
+      if (part.type === 'text') {
+        if (part.text) {
+          contentItems.push({ type: 'text', text: part.text })
+        }
+        continue
+      }
+
+      if (part.type === 'image') {
+        contentItems.push({
+          type: 'image_url',
+          image_url: {
+            url: part.imageUrl,
+          },
+        })
+        continue
+      }
+
+      contentItems.push({
+        type: 'file',
+        file: {
+          filename: part.fileName,
+          file_data: part.dataUrl,
+        },
+      })
+    }
+
+    return {
+      ...message,
+      content: contentItems,
+    }
+  })
 }
 
 function buildPayload(
@@ -390,7 +494,7 @@ function buildPayload(
 
   const payload: Record<string, unknown> = {
     model,
-    messages,
+    messages: buildChatCompletionsMessages(messages),
     reasoning_effort: DEFAULT_REASONING_EFFORT,
   }
 
@@ -426,19 +530,71 @@ function buildAnthropicThinkingConfig(model: string): Anthropic.ThinkingConfigPa
 
 function buildAnthropicMessages(messages: ChatCompletionOptions['messages']) {
   const systemParts: string[] = []
-  const conversationalMessages: Array<{ role: 'user' | 'assistant'; content: string }> = []
+  const conversationalMessages: Anthropic.MessageParam[] = []
 
   for (const message of messages) {
     if (message.role === 'system') {
-      if (message.content.trim()) {
-        systemParts.push(message.content.trim())
+      const systemText = getMessageTextContent(message.content).trim()
+      if (systemText) {
+        systemParts.push(systemText)
       }
       continue
     }
 
     conversationalMessages.push({
       role: message.role,
-      content: message.content,
+      content:
+        typeof message.content === 'string'
+          ? message.content
+          : (() => {
+              const blocks: Anthropic.ContentBlockParam[] = []
+
+              for (const part of message.content) {
+                if (part.type === 'text') {
+                  if (part.text) {
+                    blocks.push({ type: 'text', text: part.text })
+                  }
+                  continue
+                }
+
+                if (part.type === 'image') {
+                  blocks.push({
+                    type: 'image',
+                    source: {
+                      type: 'base64',
+                      media_type: toAnthropicImageMediaType(part.mimeType),
+                      data: extractBase64Data(part.imageUrl),
+                    },
+                  })
+                  continue
+                }
+
+                if (part.mimeType === 'application/pdf') {
+                  blocks.push({
+                    type: 'document',
+                    source: {
+                      type: 'base64',
+                      media_type: 'application/pdf',
+                      data: extractBase64Data(part.dataUrl),
+                    },
+                    title: part.fileName,
+                  })
+                  continue
+                }
+
+                blocks.push({
+                  type: 'document',
+                  source: {
+                    type: 'text',
+                    media_type: 'text/plain',
+                    data: part.textContent || '',
+                  },
+                  title: part.fileName,
+                })
+              }
+
+              return blocks
+            })(),
     })
   }
 

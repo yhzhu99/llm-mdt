@@ -100,10 +100,25 @@ export interface ConversationSummary {
   message_count: number
 }
 
+export interface UserAttachment {
+  id: string
+  kind: 'image' | 'file'
+  name: string
+  mimeType: string
+  size: number
+  dataUrl: string
+  textContent?: string | null
+}
+
+export interface UserInputPayload {
+  text: string
+  attachments: UserAttachment[]
+}
+
 export interface UserConversationMessage {
   id?: string
   role: 'user'
-  content: string
+  input: UserInputPayload
   created_at?: string
 }
 
@@ -225,7 +240,7 @@ export interface PersistedConversationRun {
   requestId: string
   assistantMessageId: string
   userMessageId: string
-  content: string
+  input: UserInputPayload
   locale: AppLocale
   runConfig?: MdtRunConfig
   shouldGenerateTitle: boolean
@@ -252,7 +267,7 @@ export interface HealthStatus {
 }
 
 export interface SendMessagePayload {
-  content: string
+  input: UserInputPayload
   locale?: AppLocale
 }
 
@@ -275,9 +290,34 @@ export interface SendMessageResult {
   metadata: RankingMetadata | null
 }
 
+export interface ChatCompletionTextPart {
+  type: 'text'
+  text: string
+}
+
+export interface ChatCompletionImagePart {
+  type: 'image'
+  imageUrl: string
+  mimeType: string
+  name?: string
+}
+
+export interface ChatCompletionFilePart {
+  type: 'file'
+  fileName: string
+  dataUrl: string
+  mimeType: string
+  textContent?: string | null
+}
+
+export type ChatCompletionContentPart =
+  | ChatCompletionTextPart
+  | ChatCompletionImagePart
+  | ChatCompletionFilePart
+
 export interface ChatCompletionMessage {
   role: 'system' | 'user' | 'assistant'
-  content: string
+  content: string | ChatCompletionContentPart[]
 }
 
 export interface ChatCompletionOptions {
@@ -319,7 +359,7 @@ export interface ConversationRepository {
   createConversation: (conversationId?: string) => Promise<Conversation>
   getConversation: (conversationId: string) => Promise<Conversation | null>
   saveConversation: (conversation: Conversation) => Promise<Conversation>
-  addUserMessage: (conversationId: string, content: string) => Promise<Conversation>
+  addUserMessage: (conversationId: string, input: UserInputPayload) => Promise<Conversation>
   addAssistantMessage: (
     conversationId: string,
     message: AssistantMessageRecord,
